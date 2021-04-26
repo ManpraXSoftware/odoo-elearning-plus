@@ -8,31 +8,13 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
             ["/website_scorm_elearning/static/src/xml/website_slides_fullscreen.xml"]
         ),
         _preprocessSlideData: function (slidesDataList) {
+            var res = this._super.apply(this, arguments);
             slidesDataList.forEach(function (slideData, index) {
-                // compute hasNext slide
-                slideData.hasNext = index < slidesDataList.length-1;
-                // compute embed url
-                if (slideData.type === 'video') {
-                    slideData.embedCode = $(slideData.embedCode).attr('src') || ""; // embedCode contains an iframe tag, where src attribute is the url (youtube or embed document from odoo)
-                    var separator = slideData.embedCode.indexOf("?") !== -1 ? "&" : "?";
-                    var scheme = slideData.embedCode.indexOf('//') === 0 ? 'https:' : '';
-                    var params = { rel: 0, enablejsapi: 1, origin: window.location.origin };
-                    if (slideData.embedCode.indexOf("//drive.google.com") === -1) {
-                        params.autoplay = 1;
-                    }
-                    slideData.embedUrl = slideData.embedCode ? scheme + slideData.embedCode + separator + $.param(params) : "";
-                } else if (slideData.type === 'infographic') {
-                    slideData.embedUrl = _.str.sprintf('/web/image/slide.slide/%s/image_1024', slideData.id);
-                } else if (_.contains(['document', 'presentation'], slideData.type)) {
+                if (slideData.type === 'scorm') {
                     slideData.embedUrl = $(slideData.embedCode).attr('src');
-                } else if (slideData.type === 'scorm') {
-                    slideData.embedUrl = $(slideData.embedCode).attr('src');
+                } else {
+                    return res;
                 }
-                // fill empty property to allow searching on it with _.filter(list, matcher)
-                slideData.isQuiz = !!slideData.isQuiz;
-                slideData.hasQuestion = !!slideData.hasQuestion;
-                // technical settings for the Fullscreen to work
-                slideData._autoSetDone = _.contains(['infographic', 'presentation', 'document', 'webpage'], slideData.type) && !slideData.hasQuestion;
             });
             return slidesDataList;
         },
