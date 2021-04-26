@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <template id="slide_content_detailed_inherit_scorm" inherit_id="website_slides.slide_content_detailed">
+            <t t-set="allow_done_btn" position="attributes">
+                <attribute name="t-value">slide.slide_type in ['infographic', 'presentation', 'document', 'webpage', 'video', 'scorm'] and not slide.question_ids and not channel_progress[slide.id].get('completed') and slide.channel_id.is_member</attribute>
+            </t>
+            <div class="o_wslides_lesson_content_type" position="inside">
+                <div t-if="slide.slide_type == 'scorm'" class="embed-responsive embed-responsive-4by3 embed-responsive-item mb8" style="height: 600px;">
+                    <t t-raw="slide.embed_code"/>
+                </div>
+            </div>
+        </template>
+        <template id="slide_icon_scorm" inherit_id="website_slides.slide_icon">
+            <i t-if="slide.slide_type == 'quiz'" position="after">
+                <i t-if="slide.slide_type == 'scorm'" t-att-class="'fa fa-file-archive-o %s' % icon_class"></i>
+            </i>
+        </template>
+    </data>
+</odoo>
