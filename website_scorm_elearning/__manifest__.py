@@ -24,4 +24,5 @@ Create Online Courses Using Scorm
     'installable': True,
     'application': True,
     'license': 'AGPL-3',
+    'post_init_hook': '_set_folder_permissions'
 }
