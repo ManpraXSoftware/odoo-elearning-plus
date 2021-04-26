@@ -16,5 +16,10 @@
                 <i t-if="slide.slide_type == 'scorm'" t-att-class="'fa fa-file-archive-o %s' % icon_class"></i>
             </i>
         </template>
+        <template id="slide_fullscreen_sidebar_category_scorm_inherit" inherit_id="website_slides.slide_fullscreen_sidebar_category">
+            <li t-att-class="'o_wslides_fs_sidebar_list_item d-flex align-items-top py-1 %s' % ('active' if slide.id == current_slide.id else '')" position="attributes">
+                <attribute name="t-att-data-embed-code">slide.embed_code if slide.slide_type in ['video', 'document', 'presentation', 'infographic', 'scorm'] else False</attribute>
+            </li>
+        </template>
     </data>
 </odoo>
