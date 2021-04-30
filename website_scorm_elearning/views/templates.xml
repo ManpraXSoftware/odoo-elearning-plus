@@ -6,7 +6,9 @@
                 <attribute name="t-value">slide.slide_type in ['infographic', 'presentation', 'document', 'webpage', 'video', 'scorm'] and not slide.question_ids and not channel_progress[slide.id].get('completed') and slide.channel_id.is_member</attribute>
             </t>
             <div class="o_wslides_lesson_content_type" position="inside">
-                <div t-if="slide.slide_type == 'scorm'" class="embed-responsive embed-responsive-4by3 embed-responsive-item mb8" style="height: 600px;">
+                <div t-if="slide.slide_type == 'scorm'" id="scorm_content" t-att-slide_id="slide.id"
+                    class="embed-responsive embed-responsive-4by3 embed-responsive-item mb8" style="height: 600px;">
+                    <input type="hidden" id="iframe_src" t-att-value="slide.embed_code" t-att-data-slide-type="slide.slide_type"/>
                     <t t-raw="slide.embed_code"/>
                 </div>
             </div>
