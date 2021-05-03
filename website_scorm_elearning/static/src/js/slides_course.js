@@ -1,85 +1,15 @@
-odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
+odoo.define('website_scorm_elearning.scorm', function (require) {
     'use strict';
-    var core = require('web.core');
-    var QWeb = core.qweb;
     var rpc = require('web.rpc');
-    var Fullscreen = require('website_slides.fullscreen');
+    var publicWidget = require('web.public.widget');
 
-    var findSlide = function (slideList, matcher) {
-        var slideMatch = _.matcher(matcher);
-        return _.find(slideList, slideMatch);
-    };
+    function API(slide, slide_type){
 
-    Fullscreen.include({
-        xmlDependencies: (Fullscreen.prototype.xmlDependencies || []).concat(
-            ["/website_scorm_elearning/static/src/xml/website_slides_fullscreen.xml"]
-        ),
-        _preprocessSlideData: function (slidesDataList) {
-            var res = this._super.apply(this, arguments);
-            slidesDataList.forEach(function (slideData, index) {
-                if (slideData.type === 'scorm') {
-                    slideData.embedUrl = $(slideData.embedCode).attr('src');
-                }
-            });
-            return res;
-        },
-
-        /**
-         * Extend the _renderSlide method so that slides of type "scorm"
-         * are also taken into account and rendered correctly
-         *
-         * @private
-         * @override
-         */
-
-        _renderSlide: function (){
-            var def = this._super.apply(this, arguments);
-            var $content = this.$('.o_wslides_fs_content');
-            var slideId = this.get('slide');
-            if (slideId.type === "scorm"){
-                $content.html(QWeb.render('website.slides.fullscreen.content',{widget: this}));
-            }
-            return Promise.all([def]);
-        },
-
-        _onChangeSlide: function () {
-            var res = this._super.apply(this, arguments);
-            var currentSlide = parseInt(this.$('.o_wslides_fs_sidebar_list_item.active').data('id'));
-            this._rpc({
-                route:"/slides/slide/get_scorm_version",
-                params: {
-                    'slide_id': currentSlide
-                }
-            }).then(function (data){
-                if (data.scorm_version === 'scorm11') {
-                    window.API = new API();
-                }
-                if (data.scorm_version === 'scorm2004') {
-                    window.API_1484_11 = new API_1484_11();
-                }
-            });
-            return res;
-        },
-    });
-
-    function API(){
-
-        var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
-        var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
-        var slideList = [];
-        $slides.each(function () {
-            var slideData = $(this).data();
-            slideList.push(slideData);
-        });
-        var slide = findSlide(slideList, {
-            id: slideId,
-        });
-        this.slide = slide;
         this.values = {};
         rpc.query({
             route: '/slide/slide/get_session_info',
             params: {
-                slide_id: this.slide.id,
+                slide_id: slide
             }
         }).then(data => {
            this.values = data;
@@ -93,25 +23,25 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
             rpc.query({
                 route: '/slide/slide/set_session_info',
                 params: {
-                    slide_id: this.slide.id,
+                    slide_id: slide,
                     element: element,
                     value: value,
                 }
             })
+            console.log(element, '===>', value);
             if ((element == 'cmi.completion_status') && (['complete', 'passed'].includes(value))) {
                 rpc.query({
                     route: '/slides/slide/set_completed',
                     params: {
-                        slide_id: this.slide.id,
+                        slide_id: slide,
                 }
                 }).then(data => {
-                    this.slide.completed = true;
-                    var $elem = $('.fa-circle-thin[data-slide-id="'+this.slide.id+'"]');
-                    $elem.removeClass('fa-circle-thin').addClass('fa-check text-success o_wslides_slide_completed');
+                    var $elem = $('#o_wslides_lesson_aside_slide_check_'+ slide);
+                    $elem.removeClass('fa-circle text-600').addClass('text-success fa-check-circle');
                     var channelCompletion = data.channel_completion;
                     var completion = Math.min(100, channelCompletion);
                     $('.progress-bar').css('width', completion + "%" );
-                    $('.o_wslides_progress_percentage').text(completion);
+                    $('.text-white-50').text(completion + " %");
                 });
             };
             return "true";
@@ -177,13 +107,12 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
                         slide_id: this.slide.id,
                 }
                 }).then(data => {
-                    this.slide.completed = true;
-                    var $elem = $('.fa-circle-thin[data-slide-id="'+this.slide.id+'"]');
-                    $elem.removeClass('fa-circle-thin').addClass('fa-check text-success o_wslides_slide_completed');
+                    var $elem = $('#o_wslides_lesson_aside_slide_check_'+ slide);
+                    $elem.removeClass('fa-circle text-600').addClass('text-success fa-check-circle');
                     var channelCompletion = data.channel_completion;
                     var completion = Math.min(100, channelCompletion);
                     $('.progress-bar').css('width', completion + "%" );
-                    $('.o_wslides_progress_percentage').text(completion);
+                    $('.text-white-50').text(completion + " %");
                 });
             }
 
@@ -208,4 +137,32 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
             return "true";
         }
     }
+
+    publicWidget.registry.Scorm = publicWidget.Widget.extend({
+        selector: '.o_wslides_lesson_content_type',
+
+        /**
+         * @override
+         */
+        start: function () {
+            var currentSlide = parseInt($('#scorm_content').attr('slide_id'));
+            $('#scorm_content').append($('#iframe_src').attr('value'));
+            $('#iframe_src').remove();
+            if (!(isNaN(currentSlide))) {
+                this._rpc({
+                    route:"/slides/slide/get_scorm_version",
+                    params: {
+                        'slide_id': currentSlide
+                    }
+                }).then(function (data){
+                    if (data.scorm_version === 'scorm11') {
+                        window.API = new API(currentSlide, 'scorm');
+                    }
+                    if (data.scorm_version === 'scorm2004') {
+                        window.API_1484_11 = new API_1484_11(currentSlide, 'scorm');
+                    }
+                });
+            }
+        },
+    });
 });

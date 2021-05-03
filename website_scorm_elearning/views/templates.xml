@@ -9,7 +9,7 @@
                 <div t-if="slide.slide_type == 'scorm'" id="scorm_content" t-att-slide_id="slide.id"
                     class="embed-responsive embed-responsive-4by3 embed-responsive-item mb8" style="height: 600px;">
                     <input type="hidden" id="iframe_src" t-att-value="slide.embed_code" t-att-data-slide-type="slide.slide_type"/>
-                    <t t-raw="slide.embed_code"/>
+                    <!-- <t t-raw="slide.embed_code"/> -->
                 </div>
             </div>
         </template>
