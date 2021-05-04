@@ -12,6 +12,14 @@
                     <!-- <t t-raw="slide.embed_code"/> -->
                 </div>
             </div>
+            <span t-att-class="'ml-2 badge %s' % ('badge-success' if channel_progress[slide.id].get('completed') else 'badge-info')" position="attributes">
+                <attribute name="t-if" separator=" or " add="aside_slide.slide_type == 'scorm'"/>
+            </span>
+        </template>
+        <template inherit_id="website_slides.slide_aside_training_category" id="slide_aside_training_category_inherited_scorm">
+            <div class="ml-auto" position="attributes">
+                <attribute name="t-if" separator=" or " add="aside_slide.slide_type == 'scorm'"/>
+            </div>
         </template>
         <template id="slide_icon_scorm" inherit_id="website_slides.slide_icon">
             <i t-if="slide.slide_type == 'quiz'" position="after">

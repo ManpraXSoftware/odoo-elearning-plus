@@ -16,6 +16,7 @@ class SlidePartnerRelation(models.Model):
     _inherit = 'slide.slide.partner'
 
     lms_session_info_ids = fields.One2many('lms.session.info', 'slide_partner_id', 'LMS Session Info')
+    lms_scorm_karma = fields.Integer("Scorm Karma")
 
 
 class LmsSessionInfo(models.Model):
@@ -32,6 +33,11 @@ class Channel(models.Model):
 
     nbr_scorm = fields.Integer("Number of Scorms", compute="_compute_slides_statistics", store=True)
 
+    @api.depends('slide_ids.slide_type', 'slide_ids.is_published', 'slide_ids.completion_time',
+                 'slide_ids.likes', 'slide_ids.dislikes', 'slide_ids.total_views', 'slide_ids.is_category', 'slide_ids.active')
+    def _compute_slides_statistics(self):
+        super(Channel, self)._compute_slides_statistics()
+
 
 class Slide(models.Model):
     _inherit = 'slide.slide'
@@ -46,6 +52,25 @@ class Slide(models.Model):
         ('scorm11', 'Scorm 1.1/1.2'),
         ('scorm2004', 'Scorm 2004 Edition')
     ], default="scorm11")
+    scorm_passed_xp = fields.Integer("Scorm Passed Xp")
+    scorm_completed_xp = fields.Integer("Scorm Completed Xp")
+
+    @api.depends('slide_ids.sequence', 'slide_ids.slide_type', 'slide_ids.is_published', 'slide_ids.is_category')
+    def _compute_slides_statistics(self):
+        super(Slide, self)._compute_slides_statistics()
+
+    def _compute_quiz_info(self, target_partner, quiz_done=False):
+        res = super(Slide, self)._compute_quiz_info(target_partner)
+        for slide in self:
+            slide_partner_id = self.env['slide.slide.partner'].sudo().search([
+                ('slide_id', '=', slide.id),
+                ('partner_id', '=', target_partner.id)
+            ], limit=1)
+            if res[slide.id].get('quiz_karma_won'):
+                res[slide.id]['quiz_karma_won'] += slide_partner_id.lms_scorm_karma
+            else:
+                res[slide.id]['quiz_karma_won'] = slide_partner_id.lms_scorm_karma
+        return res
 
     @api.onchange('scorm_data')
     def _on_change_scorm_data(self):

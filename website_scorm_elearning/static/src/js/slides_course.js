@@ -28,12 +28,12 @@ odoo.define('website_scorm_elearning.scorm', function (require) {
                     value: value,
                 }
             })
-            console.log(element, '===>', value);
-            if ((element == 'cmi.completion_status') && (['complete', 'passed'].includes(value))) {
+            if ((element == 'cmi.completion_status') && (['completed', 'passed'].includes(value))) {
                 rpc.query({
-                    route: '/slides/slide/set_completed',
+                    route: '/slides/slide/set_completed_scorm',
                     params: {
                         slide_id: slide,
+                        completion_type: value,
                 }
                 }).then(data => {
                     var $elem = $('#o_wslides_lesson_aside_slide_check_'+ slide);
@@ -100,12 +100,13 @@ odoo.define('website_scorm_elearning.scorm', function (require) {
                     value: value,
                 }
             })
-            if (element == 'cmi.core.lesson_status' && (['complete', 'passed'].includes(value))) {
+            if (element == 'cmi.core.lesson_status' && (['completed', 'passed'].includes(value))) {
                 rpc.query({
-                    route: '/slides/slide/set_completed',
+                    route: '/slides/slide/set_completed_scorm',
                     params: {
                         slide_id: this.slide.id,
-                }
+                        completion_type: value,
+                    }
                 }).then(data => {
                     var $elem = $('#o_wslides_lesson_aside_slide_check_'+ slide);
                     $elem.removeClass('fa-circle text-600').addClass('text-success fa-check-circle');
