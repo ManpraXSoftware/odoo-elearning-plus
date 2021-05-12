@@ -66,21 +66,21 @@ odoo.define('website_scorm_elearning.scorm', function (require) {
             return "true";
         }
     }
-    function API_1484_11(){
+    function API_1484_11(currentSlide, slide_type){
 
-        var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
-        var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
-        var slideList = [];
-        $slides.each(function () {
-            var slideData = $(this).data();
-            slideList.push(slideData);
-        });
-        this.slide = findSlide(slideList, {id: slideId});
+        // var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
+        // var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
+        // var slideList = [];
+        // $slides.each(function () {
+        //     var slideData = $(this).data();
+        //     slideList.push(slideData);
+        // });
+        // this.slide = findSlide(slideList, {id: slideId});
         this.values = {};
         rpc.query({
             route: '/slide/slide/get_session_info',
             params: {
-                slide_id: this.slide.id,
+                slide_id: currentSlide,
             }
         }).then(data => {
            this.values = data;
@@ -95,7 +95,7 @@ odoo.define('website_scorm_elearning.scorm', function (require) {
             rpc.query({
                 route: '/slide/slide/set_session_info',
                 params: {
-                    slide_id: this.slide.id,
+                    slide_id: currentSlide,
                     element: element,
                     value: value,
                 }
@@ -104,11 +104,11 @@ odoo.define('website_scorm_elearning.scorm', function (require) {
                 rpc.query({
                     route: '/slides/slide/set_completed_scorm',
                     params: {
-                        slide_id: this.slide.id,
+                        slide_id: currentSlide,
                         completion_type: value,
                     }
                 }).then(data => {
-                    var $elem = $('#o_wslides_lesson_aside_slide_check_'+ slide);
+                    var $elem = $('#o_wslides_lesson_aside_slide_check_'+ currentSlide);
                     $elem.removeClass('fa-circle text-600').addClass('text-success fa-check-circle');
                     var channelCompletion = data.channel_completion;
                     var completion = Math.min(100, channelCompletion);
