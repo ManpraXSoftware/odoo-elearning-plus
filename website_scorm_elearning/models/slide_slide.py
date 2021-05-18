@@ -12,11 +12,31 @@ from odoo.exceptions import ValidationError
 from odoo.addons.http_routing.models.ir_http import url_for
 
 
+class SlidePartnerRelation(models.Model):
+    _inherit = 'slide.slide.partner'
+
+    lms_session_info_ids = fields.One2many('lms.session.info', 'slide_partner_id', 'LMS Session Info')
+    lms_scorm_karma = fields.Integer("Scorm Karma")
+
+
+class LmsSessionInfo(models.Model):
+    _name = 'lms.session.info'
+
+    name = fields.Char("Name")
+    value = fields.Char("Value")
+    slide_partner_id = fields.Many2one('slide.slide.partner')
+
+
 class Channel(models.Model):
     """ A channel is a container of slides. """
     _inherit = 'slide.channel'
 
     nbr_scorm = fields.Integer("Number of Scorms", compute="_compute_slides_statistics", store=True)
+
+    @api.depends('slide_ids.slide_type', 'slide_ids.is_published', 'slide_ids.completion_time',
+                 'slide_ids.likes', 'slide_ids.dislikes', 'slide_ids.total_views', 'slide_ids.is_category', 'slide_ids.active')
+    def _compute_slides_statistics(self):
+        super(Channel, self)._compute_slides_statistics()
 
 
 class Slide(models.Model):
@@ -28,6 +48,29 @@ class Slide(models.Model):
     nbr_scorm = fields.Integer("Number of Scorms", compute="_compute_slides_statistics", store=True)
     filename = fields.Char()
     embed_code = fields.Text('Embed Code', readonly=True, compute='_compute_embed_code')
+    scorm_version = fields.Selection([
+        ('scorm11', 'Scorm 1.1/1.2'),
+        ('scorm2004', 'Scorm 2004 Edition')
+    ], default="scorm11")
+    scorm_passed_xp = fields.Integer("Scorm Passed Xp")
+    scorm_completed_xp = fields.Integer("Scorm Completed Xp")
+
+    @api.depends('slide_ids.sequence', 'slide_ids.slide_type', 'slide_ids.is_published', 'slide_ids.is_category')
+    def _compute_slides_statistics(self):
+        super(Slide, self)._compute_slides_statistics()
+
+    def _compute_quiz_info(self, target_partner, quiz_done=False):
+        res = super(Slide, self)._compute_quiz_info(target_partner)
+        for slide in self:
+            slide_partner_id = self.env['slide.slide.partner'].sudo().search([
+                ('slide_id', '=', slide.id),
+                ('partner_id', '=', target_partner.id)
+            ], limit=1)
+            if res[slide.id].get('quiz_karma_won'):
+                res[slide.id]['quiz_karma_won'] += slide_partner_id.lms_scorm_karma
+            else:
+                res[slide.id]['quiz_karma_won'] = slide_partner_id.lms_scorm_karma
+        return res
 
     @api.onchange('scorm_data')
     def _on_change_scorm_data(self):
@@ -41,9 +84,9 @@ class Slide(models.Model):
             self.read_files_from_zip()
         else:
             if self.filename:
-                folder_dir = self.filename.split('media')[-1].split('/')[1]
+                folder_dir = self.filename.split('scorm')[-1].split('/')[1]
                 path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-                target_dir = '/'.join(p for p in path.split('/')[:len(path.split('/')) - 1]) + '/static/media/' + folder_dir
+                target_dir = '/'.join(p for p in path.split('/')[:len(path.split('/')) - 1]) + '/static/media/scorm/' + folder_dir
                 if os.path.isdir(target_dir):
                     shutil.rmtree(target_dir)
 
@@ -71,24 +114,19 @@ class Slide(models.Model):
             listOfFileNames = zipObj.namelist()
             html_file_name = ''
             package_name = ''
-            flag = False
-            for fileName in listOfFileNames:
+            for fileName in sorted(listOfFileNames):
                 filename = fileName.split('/')
-                if 'meta.xml' in listOfFileNames: #Normal Structure
-                    if not package_name:
-                        flag = True
-                        package_name = self.scorm_data.name.split('.')[0]
+                package_name = self.scorm_data.name.split('.')[0]
                 if 'index.html' in filename:
                     html_file_name = '/'.join(filename)
                     break
-                if 'story.html' in filename:
+                elif 'index_lms.html' in filename:
                     html_file_name = '/'.join(filename)
                     break
-                if not package_name: #Nested Structure
-                    package_name = filename[0]
-            source_dir = '/'.join(p for p in path.split('/')[:len(path.split('/')) - 1]) + '/static/media/'
-            if flag:
-                source_dir += str(package_name)
+                elif 'story.html' in filename:
+                    html_file_name = '/'.join(filename)
+                    break
+            source_dir = '/'.join(p for p in path.split('/')[:len(path.split('/')) - 1]) + '/static/media/scorm/' + str(package_name)
             zipObj.extractall(source_dir)
-            self.filename = '/website_scorm_elearning/static/media/%s' % (str(package_name) + '/' if flag else '') + html_file_name
+            self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(package_name), html_file_name)
         f.close()
