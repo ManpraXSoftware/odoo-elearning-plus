@@ -162,6 +162,9 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
             return returnValue;
         }
         this.SetValue = function(element, value){
+            if (isNaN(value)) {
+                value = 0;
+            }
             this.values[element] = value;
             rpc.query({
                 route: '/slide/slide/set_session_info',
@@ -192,7 +195,11 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
             return "true";
         }
         this.GetValue = function(element) {
-            return this.values[element];
+            var value = this.values[element];
+            if (value == undefined) {
+                value = '';
+            }
+            return value;
         }
         this.GetLastError = function() {
             return 0;
