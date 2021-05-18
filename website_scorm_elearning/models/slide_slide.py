@@ -9,7 +9,6 @@ from werkzeug import urls
 from odoo.http import request
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
-from odoo.addons.http_routing.models.ir_http import url_for
 
 
 class SlidePartnerRelation(models.Model):
@@ -27,23 +26,11 @@ class LmsSessionInfo(models.Model):
     slide_partner_id = fields.Many2one('slide.slide.partner')
 
 
-class Channel(models.Model):
-    """ A channel is a container of slides. """
-    _inherit = 'slide.channel'
-
-    nbr_scorm = fields.Integer("Number of Scorms", compute="_compute_slides_statistics", store=True)
-
-    @api.depends('slide_ids.slide_type', 'slide_ids.is_published', 'slide_ids.completion_time',
-                 'slide_ids.likes', 'slide_ids.dislikes', 'slide_ids.total_views', 'slide_ids.is_category', 'slide_ids.active')
-    def _compute_slides_statistics(self):
-        super(Channel, self)._compute_slides_statistics()
-
-
 class Slide(models.Model):
     _inherit = 'slide.slide'
 
     slide_type = fields.Selection(
-        selection_add=[('scorm', 'Scorm')], ondelete={'scorm': 'set default'})
+        selection_add=[('scorm', 'Scorm')])
     scorm_data = fields.Many2many('ir.attachment')
     nbr_scorm = fields.Integer("Number of Scorms", compute="_compute_slides_statistics", store=True)
     filename = fields.Char()
@@ -54,10 +41,6 @@ class Slide(models.Model):
     ], default="scorm11")
     scorm_passed_xp = fields.Integer("Scorm Passed Xp")
     scorm_completed_xp = fields.Integer("Scorm Completed Xp")
-
-    @api.depends('slide_ids.sequence', 'slide_ids.slide_type', 'slide_ids.is_published', 'slide_ids.is_category')
-    def _compute_slides_statistics(self):
-        super(Slide, self)._compute_slides_statistics()
 
     def _compute_quiz_info(self, target_partner, quiz_done=False):
         res = super(Slide, self)._compute_quiz_info(target_partner)
