@@ -44,6 +44,11 @@ class Slide(models.Model):
 
     slide_type = fields.Selection(
         selection_add=[('scorm', 'Scorm')], ondelete={'scorm': 'set default'})
+    package_from = fields.Selection([
+        ('from_url', 'From URL'),
+        ('from_upload', 'From Local Upload')
+    ], default="from_upload")
+    package_url = fields.Char("Package URL")
     scorm_data = fields.Many2many('ir.attachment')
     nbr_scorm = fields.Integer("Number of Scorms", compute="_compute_slides_statistics", store=True)
     filename = fields.Char()
@@ -90,10 +95,14 @@ class Slide(models.Model):
                 if os.path.isdir(target_dir):
                     shutil.rmtree(target_dir)
 
+    @api.onchange('package_url')
+    def _on_change_package_url(self):
+        self.filename = self.package_url
+
     @api.depends('document_id', 'slide_type', 'mime_type')
     def _compute_embed_code(self):
         for rec in self:
-            if rec.slide_type == 'scorm' and rec.scorm_data:
+            if rec.slide_type == 'scorm' and (rec.scorm_data or rec.package_url):
                 rec.embed_code = "<iframe src='%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename)
             else:
                 res = super(Slide, rec)._compute_embed_code()
