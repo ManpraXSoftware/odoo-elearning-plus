@@ -109,17 +109,15 @@ class Slide(models.Model):
                 return res
 
     def read_files_from_zip(self):
-        file_full_path = self.env['ir.attachment']._full_path(self.scorm_data.store_fname)
         file = base64.decodebytes(self.scorm_data.datas)
         fobj = tempfile.NamedTemporaryFile(delete=False)
         fname = fobj.name
         fobj.write(file)
-        fobj.close()
         zipzip = self.scorm_data.datas
         f = open(fname, 'r+b')
         f.write(base64.b64decode(zipzip))
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-        with zipfile.ZipFile(file_full_path, 'r') as zipObj:
+        with zipfile.ZipFile(fobj, 'r') as zipObj:
             listOfFileNames = zipObj.namelist()
             html_file_name = ''
             package_name = ''
