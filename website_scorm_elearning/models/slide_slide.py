@@ -100,33 +100,36 @@ class Slide(models.Model):
                 return res
 
     def read_files_from_zip(self):
-        file_full_path = self.env['ir.attachment']._full_path(self.scorm_data.store_fname)
         file = base64.decodebytes(self.scorm_data.datas)
         fobj = tempfile.NamedTemporaryFile(delete=False)
         fname = fobj.name
         fobj.write(file)
-        fobj.close()
         zipzip = self.scorm_data.datas
         f = open(fname, 'r+b')
         f.write(base64.b64decode(zipzip))
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-        with zipfile.ZipFile(file_full_path, 'r') as zipObj:
+        with zipfile.ZipFile(fobj, 'r') as zipObj:
             listOfFileNames = zipObj.namelist()
             html_file_name = ''
             package_name = ''
-            for fileName in sorted(listOfFileNames):
-                filename = fileName.split('/')
-                package_name = self.scorm_data.name.split('.')[0]
-                if 'index.html' in filename:
-                    html_file_name = '/'.join(filename)
-                    break
-                elif 'index_lms.html' in filename:
-                    html_file_name = '/'.join(filename)
-                    break
-                elif 'story.html' in filename:
-                    html_file_name = '/'.join(filename)
-                    break
+            html_file_name = list(filter(lambda x: 'index.html' in x, listOfFileNames))
+            if not html_file_name:
+                html_file_name = list(filter(lambda x: 'index_lms.html' in x, listOfFileNames))
+                if not html_file_name:
+                    html_file_name = list(filter(lambda x: 'story.html' in x, listOfFileNames))
+            # for fileName in sorted(listOfFileNames):
+            #     filename = fileName.split('/')
+            #     package_name = self.scorm_data.name.split('.')[0]
+            #     if 'index.html' in filename:
+            #         html_file_name = '/'.join(filename)
+            #         break
+            #     elif 'index_lms.html' in filename:
+            #         html_file_name = '/'.join(filename)
+            #         break
+            #     elif 'story.html' in filename:
+            #         html_file_name = '/'.join(filename)
+            #         break
             source_dir = '/'.join(p for p in path.split('/')[:len(path.split('/')) - 1]) + '/static/media/scorm/' + str(package_name)
             zipObj.extractall(source_dir)
-            self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(package_name), html_file_name)
+            self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(package_name), html_file_name[0] if len(html_file_name) > 0 else None)
         f.close()
