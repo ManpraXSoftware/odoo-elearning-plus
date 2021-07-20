@@ -1,0 +1,10 @@
+<?xml version="1.0" ?>
+<odoo>
+    <data>
+        <template id="assets_frontend_slides" inherit_id="website.assets_frontend" name="Slides Frontend Assets">
+            <xpath expr="//script[last()]" position="after">
+                <script type="text/javascript" src="/web_elearning_extended/static/src/js/slides_course.js"/>
+            </xpath>
+        </template>
+    </data>
+</odoo>
