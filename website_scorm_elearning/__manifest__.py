@@ -3,7 +3,7 @@
     'name': 'eLearning with Scorm',
     'version': '1.1',
     'sequence': 10,
-    'summary': 'Manage and publish an eLearning platform',
+    'summary': 'Enhanced learning using Scorm integration',
     'website': 'https://www.manprax.com',
     'author': 'ManpraX Software LLP',
     'category': 'Website/eLearning',
