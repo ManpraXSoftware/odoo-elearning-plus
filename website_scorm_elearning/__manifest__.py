@@ -15,10 +15,15 @@ Create Online Courses Using Scorm
     ],
     'data': [
         'security/ir.model.access.csv',
-        'views/assets.xml',
         'views/slide_slide_views.xml',
         'views/templates.xml',
     ],
+    'assets': {
+        'web.assets_frontend': [
+            'website_scorm_elearning/static/src/js/slides_course.js',
+            'website_scorm_elearning/static/src/js/slides_course_fullscreen_player.js',
+        ],
+    },
     'demo': [],
     'qweb': [],
     'images': ["static/description/images/scorm_banner.png"],
