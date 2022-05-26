@@ -8,13 +8,21 @@
             <div class="o_wslides_lesson_content_type" position="inside">
                 <div t-if="slide.slide_type == 'scorm'" id="scorm_content" t-att-slide_id="slide.id"
                     class="embed-responsive embed-responsive-4by3 embed-responsive-item mb8" style="height: 600px;">
-                    <input type="hidden" id="iframe_src" t-att-value="slide.embed_code" t-att-data-slide-type="slide.slide_type"/>
-                    <!-- <t t-raw="slide.embed_code"/> -->
+                    <input type="hidden" id="iframe_src"  t-att-value="slide.embed_code" t-att-data-slide-type="slide.slide_type"/>
                 </div>
             </div>
             <span t-att-class="'ml-2 badge %s' % ('badge-success' if channel_progress[slide.id].get('completed') else 'badge-info')" position="attributes">
                 <attribute name="t-if" separator=" or " add="slide.slide_type == 'scorm'"/>
             </span>
+            <div class="row align-items-center my-3" position="after">
+                <div class="col-12 col-md ">
+                    <t t-foreach="slide['state_scorm_ids']" t-as="poll">
+                        <p class="alert alert-danger" t-if="poll['error_scorm']" role="alert">
+                            <t t-esc="poll['error_scorm']"/>
+                        </p>
+                    </t>
+                </div>
+            </div>
         </template>
         <template inherit_id="website_slides.slide_aside_training_category" id="slide_aside_training_category_inherited_scorm">
             <div class="ml-auto" position="attributes">
@@ -28,6 +36,7 @@
         </template>
         <template id="slide_fullscreen_sidebar_category_scorm_inherit" inherit_id="website_slides.slide_fullscreen_sidebar_category">
             <li t-att-class="'o_wslides_fs_sidebar_list_item d-flex align-items-top py-1 %s' % ('active' if slide.id == current_slide.id else '')" position="attributes">
+                <attribute name="t-att-data-is_tincan">slide.is_tincan</attribute>
                 <attribute name="t-att-data-embed-code">slide.embed_code if slide.slide_type in ['video', 'document', 'presentation', 'infographic', 'scorm'] else False</attribute>
             </li>
         </template>
