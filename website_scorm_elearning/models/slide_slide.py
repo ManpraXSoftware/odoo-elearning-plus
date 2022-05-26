@@ -86,7 +86,8 @@ class Slide(models.Model):
             if self.filename:
                 folder_dir = self.filename.split('scorm')[-1].split('/')[1]
                 path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-                target_dir = '/'.join(p for p in path.split('/')[:len(path.split('/')) - 1]) + '/static/media/scorm/' + folder_dir
+                path = path.replace('\\', '/')
+                target_dir = '/'.join(p for p in path.split('/')[:len(path.split('/')) - 1]) + '/static/media/scorm/' + self.name + '/' + folder_dir
                 if os.path.isdir(target_dir):
                     shutil.rmtree(target_dir)
 
@@ -108,10 +109,11 @@ class Slide(models.Model):
         f = open(fname, 'r+b')
         f.write(base64.b64decode(zipzip))
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+        path = path.replace('\\', '/')
         with zipfile.ZipFile(fobj, 'r') as zipObj:
             listOfFileNames = zipObj.namelist()
             html_file_name = ''
-            package_name = ''
+            package_name = self.name
             html_file_name = list(filter(lambda x: 'index.html' in x, listOfFileNames))
             if not html_file_name:
                 html_file_name = list(filter(lambda x: 'index_lms.html' in x, listOfFileNames))
