@@ -67,10 +67,9 @@ class Slide(models.Model):
             self.read_files_from_zip()
         else:
             if self.filename:
-                folder_dir = self.filename.split('scorm')[-1].split('/')[1]
+                folder_dir = self.filename.split('scorm')[-1].split('/')[-2]
                 path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-                path = path.replace('\\', '/')
-                target_dir = '/'.join(p for p in path.split('/')[:len(path.split('/')) - 1]) + '/static/media/scorm/' + self.name + '/' + folder_dir
+                target_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id),folder_dir)
                 if os.path.isdir(target_dir):
                     shutil.rmtree(target_dir)
 
@@ -92,11 +91,10 @@ class Slide(models.Model):
         f = open(fname, 'r+b')
         f.write(base64.b64decode(zipzip))
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-        path = path.replace('\\', '/')
         with zipfile.ZipFile(fobj, 'r') as zipObj:
             listOfFileNames = zipObj.namelist()
             html_file_name = ''
-            package_name = self.name
+            package_name = ''
             html_file_name = list(filter(lambda x: 'index.html' in x, listOfFileNames))
             if not html_file_name:
                 html_file_name = list(filter(lambda x: 'index_lms.html' in x, listOfFileNames))
@@ -114,7 +112,7 @@ class Slide(models.Model):
             #     elif 'story.html' in filename:
             #         html_file_name = '/'.join(filename)
             #         break
-            source_dir = '/'.join(p for p in path.split('/')[:len(path.split('/')) - 1]) + '/static/media/scorm/' + str(package_name)
+            source_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id))
             zipObj.extractall(source_dir)
-            self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(package_name), html_file_name[0] if len(html_file_name) > 0 else None)
+            self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name[0] if len(html_file_name) > 0 else None)
         f.close()
