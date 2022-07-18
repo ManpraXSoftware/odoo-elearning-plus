@@ -12,16 +12,24 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
 
     Fullscreen.include({
         xmlDependencies: (Fullscreen.prototype.xmlDependencies || []).concat(
-            ["/website_scorm_elearning/static/src/xml/website_slides_fullscreen.xml"],
+            ["/website_scorm_elearning/static/src/xml/website_slides_fullscreen.xml"]
         ),
         _preprocessSlideData: function (slidesDataList) {
             var res = this._super.apply(this, arguments);
+
             slidesDataList.forEach(function (slideData, index) {
                 if (slideData.type === 'scorm') {
                     slideData.embedUrl = $(slideData.embedCode).attr('src');
                     slideData.hasQuestion = !!slideData.hasQuestion;
-                    if (!(slideData.is_tincan) && !(slideData.hasQuestion)) {
-                        slideData._autoSetDone = true;
+                    try {
+                        if (!(slideData.isTimer) && !(slideData.hasQuestion) && !(slideData.is_tincan)) {
+                            slideData._autoSetDone = true;
+                        }
+                    }
+                    catch {
+                        if (!(slideData.hasQuestion)) {
+                            slideData._autoSetDone = true;
+                        }
                     }
                 }
             });
@@ -49,78 +57,33 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
         _onChangeSlide: function () {
             var res = this._super.apply(this, arguments);
             var currentSlide = parseInt(this.$('.o_wslides_fs_sidebar_list_item.active').data('id'));
-            var self = this;
-            this._rpc({
-                route:"/slides/slide/get_scorm_version",
-                params: {
-                    'slide_id': currentSlide
-                }
-            }).then(function (data){
-                if (data.scorm_version === 'scorm11') {
-                    window.API = new API();
-                    if (data.type === 'scorm' && data.is_tincan){
-                        setInterval(self.ScormComplete, 500, currentSlide);
+            var slide = findSlide(this.slides, {id: this.get('slide').id});
+            if (!slide.is_tincan){
+                this._rpc({
+                    route:"/slides/slide/get_scorm_version",
+                    params: {
+                        'slide_id': currentSlide
                     }
-                }
-                if (data.scorm_version === 'scorm2004') {
-                    window.API_1484_11 = new API_1484_11();
-                    if (data.type === 'scorm' && data.is_tincan){
-                        setInterval(self.ScormComplete, 500, currentSlide);
+                }).then(function (data){
+                    if (slide.completed == undefined) {
+                        slide.completed = false;
                     }
-                    // if (data.completed){
-                    //     clearInterval(self.start_clock);
-                    // }
-                }
-            });
-            return res;
-        },
-        /**
-         * This method is called when slide type is scorm and scorm type is tincan
-         * to complete the content based on result-passed/failed on fullscreen
-         * @private
-         * @param {Integer} slideId: the id of slide to set as completed
-        */
-        ScormComplete: function(slideId){
-            var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
-            var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
-            var slideList = [];
-            $slides.each(function () {
-                var slideData = $(this).data();
-                slideList.push(slideData);
-            });
-            var slide = findSlide(slideList, {
-                id: slideId,
-            });
-            this.slide = slide;
-            if (this.slide.type === 'scorm' && this.slide.is_tincan){
-                if (!this.slide.completed) {  // no useless RPC call
-                    return rpc.query({
-                        route: '/slides/slide/scorm_set_completed',
-                        params: {
-                            slide_id: this.slide.id
-                        }
-                    })
-                    .then(function (data){
-                        if (data.result_passed || data.result_failed){
-                            // self.slide.completed=true;
-                            console.log(data,"slide");
-                            var $elem = $('.fa-circle-thin[data-slide-id="'+self.slide.id+'"]');
-                            $elem.removeClass('fa-circle-thin').addClass('fa-check text-success o_wslides_slide_completed');
-                            var channelCompletion = data.channel_completion;
-                            var completion = Math.min(100, channelCompletion);
-                            $('.progress-bar').css('width', completion + "%" );
-                            $('.o_wslides_progress_percentage').text(completion);
-                            return Promise.resolve();
-                        }
-                    });
-                }
+                    if (data.scorm_version === 'scorm11') {
+                        window.API = new API();
+                    }
+                    if (data.scorm_version === 'scorm2004') {
+                        window.API_1484_11 = new API_1484_11();
+                    }
+                });
+                return res;
             }
-            return Promise.resolve();
-        }
+        },
     });
+
     function API(){
+
         var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
-        var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
+        var $slides = $('.o_wslides_fs_sidebar_list_item');
         var slideList = [];
         $slides.each(function () {
             var slideData = $(this).data();
@@ -195,7 +158,7 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
     function API_1484_11(){
 
         var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
-        var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
+        var $slides = $('.o_wslides_fs_sidebar_list_item');
         var slideList = [];
         $slides.each(function () {
             var slideData = $(this).data();
