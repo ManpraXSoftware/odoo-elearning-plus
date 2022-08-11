@@ -94,20 +94,12 @@ class Slide(models.Model):
 
     @api.depends('document_id', 'slide_type', 'mime_type')
     def _compute_embed_code(self):
-        try:
-            for rec in self:
-                if rec.slide_type == 'scorm' and rec.scorm_data and not rec.is_tincan:
-                    rec.embed_code = "<iframe src='%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename)
-                else:
-                    res = super(Slide, rec)._compute_embed_code()
-                    return res
-        except:
-            for rec in self:
-                if rec.slide_type == 'scorm' and rec.scorm_data:
-                    rec.embed_code = "<iframe src='%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename)
-                else:
-                    res = super(Slide, rec)._compute_embed_code()
-                    return res
+        for rec in self:
+            if rec.slide_type == 'scorm' and rec.scorm_data and not rec.is_tincan:
+                rec.embed_code = "<iframe src='%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename)
+            else:
+                res = super(Slide, rec)._compute_embed_code()
+                return res
 
     def read_files_from_zip(self):
         file = base64.decodebytes(self.scorm_data.datas)
