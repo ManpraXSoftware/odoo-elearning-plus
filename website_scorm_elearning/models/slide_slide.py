@@ -94,12 +94,30 @@ class Slide(models.Model):
 
     @api.depends('document_id', 'slide_type', 'mime_type')
     def _compute_embed_code(self):
-        for rec in self:
-            if rec.slide_type == 'scorm' and rec.scorm_data and not rec.is_tincan:
-                rec.embed_code = "<iframe src='%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename)
-            else:
-                res = super(Slide, rec)._compute_embed_code()
-                return res
+        try:
+            for rec in self:
+                if rec.slide_type == 'scorm' and rec.scorm_data and not rec.is_tincan:
+                    rec.embed_code = "<iframe src='%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename)
+                elif rec.slide_type == 'scorm' and rec.scorm_data and rec.is_tincan:
+                    user_name = self.env.user.name
+                    user_mail = self.env.user.login
+                    end_point = self.env['ir.config_parameter'].get_param('web.base.url') + '/slides/slide'
+                    end_point = urllib.parse.quote(end_point, safe=" ")
+                    actor = "{'name': [%s], mbox: ['mailto':%s]}" % (user_name,user_mail)
+                    actor = json.dumps(actor)
+                    actor = urllib.parse.quote(actor)
+                    rec.embed_code = "<iframe src='%s?endpoint=%s&actor=%s&activity_id=%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename,end_point,actor,rec.id)
+                else:
+                    res = super(Slide, rec)._compute_embed_code()
+                    return res
+        except:
+            for rec in self:
+                if rec.slide_type == 'scorm' and rec.scorm_data and not rec.is_tincan:
+                    rec.embed_code = "<iframe src='%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename)
+                else:
+                    res = super(Slide, rec)._compute_embed_code()
+                    return res
+
 
     def read_files_from_zip(self):
         file = base64.decodebytes(self.scorm_data.datas)
