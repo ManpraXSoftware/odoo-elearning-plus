@@ -112,7 +112,7 @@ class Slide(models.Model):
                     return res
         except:
             for rec in self:
-                if rec.slide_type == 'scorm' and rec.scorm_data and not rec.is_tincan:
+                if rec.slide_type == 'scorm' and rec.scorm_data:
                     rec.embed_code = "<iframe src='%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename)
                 else:
                     res = super(Slide, rec)._compute_embed_code()
