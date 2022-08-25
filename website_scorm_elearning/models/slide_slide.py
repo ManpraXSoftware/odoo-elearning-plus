@@ -129,7 +129,7 @@ class Slide(models.Model):
             #     elif 'story.html' in filename:
             #         html_file_name = '/'.join(filename)
             #         break
-            source_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id))
+            source_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm", str(self.id))
             zipObj.extractall(source_dir)
             self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name[0] if len(html_file_name) > 0 else None)
         f.close()
