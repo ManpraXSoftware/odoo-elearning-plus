@@ -3,7 +3,7 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
     var core = require('web.core');
     var QWeb = core.qweb;
     var rpc = require('web.rpc');
-    var Fullscreen = require('website_slides.fullscreen');
+    var Fullscreen = require('@website_slides/js/slides_course_fullscreen_player')[Symbol.for("default")];
 
     var findSlide = function (slideList, matcher) {
         var slideMatch = _.matcher(matcher);
