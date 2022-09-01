@@ -68,14 +68,6 @@ odoo.define('website_scorm_elearning.scorm', function (require) {
     }
     function API_1484_11(currentSlide, slide_type){
 
-        // var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
-        // var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
-        // var slideList = [];
-        // $slides.each(function () {
-        //     var slideData = $(this).data();
-        //     slideList.push(slideData);
-        // });
-        // this.slide = findSlide(slideList, {id: slideId});
         this.values = {};
         rpc.query({
             route: '/slide/slide/get_session_info',
