@@ -56,10 +56,9 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
 
         _onChangeSlide: function () {
             var res = this._super.apply(this, arguments);
-            console.log("dataaa");
             var currentSlide = parseInt(this.$('.o_wslides_fs_sidebar_list_item.active').data('id'));
             var slide = findSlide(this.slides, {id: this.get('slide').id});
-            if (!slide.is_sequential){
+            if (!slide.is_tincan){
                 this._rpc({
                     route:"/slides/slide/get_scorm_version",
                     params: {
