@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 import os
+import json
 import base64
 import zipfile
 import tempfile
 import shutil
+import urllib.parse
 from werkzeug import urls
 from odoo.http import request
 from odoo import api, fields, models, _
 from odoo.exceptions import ValidationError
-
 
 class SlidePartnerRelation(models.Model):
     _inherit = 'slide.slide.partner'
@@ -69,18 +70,35 @@ class Slide(models.Model):
             if self.filename:
                 folder_dir = self.filename.split('scorm')[-1].split('/')[-2]
                 path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-                target_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id),folder_dir)
+                target_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.name),folder_dir)
                 if os.path.isdir(target_dir):
                     shutil.rmtree(target_dir)
 
     @api.depends('document_id', 'slide_type', 'mime_type')
     def _compute_embed_code(self):
-        for rec in self:
-            if rec.slide_type == 'scorm' and rec.scorm_data:
-                rec.embed_code = "<iframe src='%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename)
-            else:
-                res = super(Slide, rec)._compute_embed_code()
-                return res
+        try:
+            for rec in self:
+                if rec.slide_type == 'scorm' and rec.scorm_data and not rec.is_tincan:
+                    rec.embed_code = "<iframe src='%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename)
+                elif rec.slide_type == 'scorm' and rec.scorm_data and rec.is_tincan:
+                    user_name = self.env.user.name
+                    user_mail = self.env.user.login
+                    end_point = self.env['ir.config_parameter'].get_param('web.base.url') + '/slides/slide'
+                    end_point = urllib.parse.quote(end_point, safe=" ")
+                    actor = "{'name': [%s], mbox: ['mailto':%s]}" % (user_name,user_mail)
+                    actor = json.dumps(actor)
+                    actor = urllib.parse.quote(actor)
+                    rec.embed_code = "<iframe src='%s?endpoint=%s&actor=%s&activity_id=%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename,end_point,actor,rec.id)
+                else:
+                    res = super(Slide, rec)._compute_embed_code()
+                    return res
+        except:
+            for rec in self:
+                if rec.slide_type == 'scorm' and rec.scorm_data:
+                    rec.embed_code = "<iframe src='%s' allowFullScreen='true' frameborder='0'></iframe>" % (rec.filename)
+                else:
+                    res = super(Slide, rec)._compute_embed_code()
+                    return res
 
     def read_files_from_zip(self):
         file = base64.decodebytes(self.scorm_data.datas)
@@ -112,7 +130,7 @@ class Slide(models.Model):
             #     elif 'story.html' in filename:
             #         html_file_name = '/'.join(filename)
             #         break
-            source_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id))
+            source_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.name))
             zipObj.extractall(source_dir)
-            self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name[0] if len(html_file_name) > 0 else None)
+            self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.name), html_file_name[0] if len(html_file_name) > 0 else None)
         f.close()
