@@ -3,7 +3,7 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
     var core = require('web.core');
     var QWeb = core.qweb;
     var rpc = require('web.rpc');
-    var Fullscreen = require('website_slides.fullscreen');
+    var Fullscreen = require('@website_slides/js/slides_course_fullscreen_player')[Symbol.for("default")];
 
     var findSlide = function (slideList, matcher) {
         var slideMatch = _.matcher(matcher);
@@ -16,9 +16,21 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
         ),
         _preprocessSlideData: function (slidesDataList) {
             var res = this._super.apply(this, arguments);
+
             slidesDataList.forEach(function (slideData, index) {
-                if (slideData.type === 'scorm') {
+                if (slideData.category === 'scorm') {
                     slideData.embedUrl = $(slideData.embedCode).attr('src');
+                    slideData.hasQuestion = !!slideData.hasQuestion;
+                    try {
+                        if (!(slideData.isTimer) && !(slideData.hasQuestion) && !(slideData.is_tincan)) {
+                            slideData._autoSetDone = true;
+                        }
+                    }
+                    catch {
+                        if (!(slideData.hasQuestion)) {
+                            slideData._autoSetDone = true;
+                        }
+                    }
                 }
             });
             return res;
@@ -36,7 +48,7 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
             var def = this._super.apply(this, arguments);
             var $content = this.$('.o_wslides_fs_content');
             var slideId = this.get('slide');
-            if (slideId.type === "scorm"){
+            if (slideId.category === "scorm"){
                 $content.html(QWeb.render('website.slides.fullscreen.content',{widget: this}));
             }
             return Promise.all([def]);
@@ -44,28 +56,46 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
 
         _onChangeSlide: function () {
             var res = this._super.apply(this, arguments);
+            console.log("dhasdhegdvsehsh");
             var currentSlide = parseInt(this.$('.o_wslides_fs_sidebar_list_item.active').data('id'));
-            this._rpc({
-                route:"/slides/slide/get_scorm_version",
-                params: {
-                    'slide_id': currentSlide
-                }
-            }).then(function (data){
-                if (data.scorm_version === 'scorm11') {
-                    window.API = new API();
-                }
-                if (data.scorm_version === 'scorm2004') {
-                    window.API_1484_11 = new API_1484_11();
-                }
-            });
-            return res;
+            var slide = findSlide(this.slides, {id: this.get('slide').id});
+            if (!slide.is_tincan){
+                this._rpc({
+                    route:"/slides/slide/get_scorm_version",
+                    params: {
+                        'slide_id': currentSlide
+                    }
+                }).then(function (data){
+                    if (slide.completed == undefined) {
+                        slide.completed = false;
+                    }
+                    if (data.scorm_version === 'scorm11') {
+                        window.API = new API();
+                    }
+                    if (data.scorm_version === 'scorm2004') {
+                        window.API_1484_11 = new API_1484_11();
+                    }
+                });
+                return res;
+            }
         },
     });
 
     function API(){
 
         var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
-        var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
+        var cur_slide = $('.o_wslides_fs_sidebar_list_item.active');
+        try {
+            if (!cur_slide.data().isSequential){
+                var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
+            }
+            else {
+                var $slides = $('.o_wslides_fs_sidebar_list_item');
+            }
+        }
+        catch {
+            var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
+        }
         var slideList = [];
         $slides.each(function () {
             var slideData = $(this).data();
@@ -140,7 +170,18 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
     function API_1484_11(){
 
         var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
-        var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
+        var cur_slide = $('.o_wslides_fs_sidebar_list_item.active');
+        try {
+            if (!cur_slide.data().isSequential){
+                var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
+            }
+            else {
+                var $slides = $('.o_wslides_fs_sidebar_list_item');
+            }
+        }
+        catch {
+            var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
+        }
         var slideList = [];
         $slides.each(function () {
             var slideData = $(this).data();

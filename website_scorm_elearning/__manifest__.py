@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'eLearning with Scorm',
-    'version': '1.1',
+    'version': '1.2',
     'sequence': 10,
-    'summary': 'Enhanced learning using Scorm integration',
+    'summary': 'Manage and publish an eLearning platform',
     'website': 'https://www.manprax.com',
     'author': 'ManpraX Software LLP',
     'category': 'Website/eLearning',
@@ -15,10 +15,16 @@ Create Online Courses Using Scorm
     ],
     'data': [
         'security/ir.model.access.csv',
-        'views/assets.xml',
         'views/slide_slide_views.xml',
         'views/templates.xml',
     ],
+    'assets': {
+        'web.assets_frontend': [
+            'website_scorm_elearning/static/src/js/slides_course.js',
+            'website_scorm_elearning/static/src/js/slides_course_fullscreen_player.js',
+            'website_scorm_elearning/static/src/xml/website_slides_fullscreen.xml',
+        ],
+    },
     'demo': [],
     'qweb': [],
     'images': ["static/description/images/scorm_banner.png"],
