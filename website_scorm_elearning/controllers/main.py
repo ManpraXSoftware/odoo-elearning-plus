@@ -62,7 +62,7 @@ class WebsiteSlidesScorm(WebsiteSlides):
         if fetch_res.get('error'):
             return fetch_res
         if slide.website_published and slide.channel_id.is_member:
-            slide.action_set_completed()
+            slide.action_mark_completed()
         self._set_karma_points(fetch_res['slide'], completion_type)
         return {
             'channel_completion': fetch_res['slide'].channel_id.completion
