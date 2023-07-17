@@ -11,7 +11,7 @@
                     <input type="hidden" id="iframe_src" t-att-value="slide.embed_code" t-att-data-slide-category="slide.slide_category"/>
                 </div>
             </div>
-            <span t-attf-class="mx-2 badge #{'text-bg-success' if slide_completed else 'text-bg-info'}" position="attributes">
+            <span t-attf-class="mx-2 my-1 badge #{'text-bg-success' if slide_completed else 'text-bg-info'}" position="attributes">
                 <attribute name="t-if">slide.question_ids and (slide_completed or quiz_karma_gain) or slide.slide_category == 'scorm'</attribute>
             </span>
         </template>
