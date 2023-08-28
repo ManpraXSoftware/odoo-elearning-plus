@@ -48,7 +48,7 @@ class Slide(models.Model):
     slide_category = fields.Selection(
         selection_add=[('scorm', 'Scorm')], ondelete={'scorm': 'set default'})
     slide_type = fields.Selection(
-        selection_add=[('scorm', 'Scorm')],default='scorm', ondelete={'scorm': 'set default'}, compute="_compute_slide_type", store=True)
+        selection_add=[('scorm', 'Scorm')], ondelete={'scorm': 'set null'}, compute="_compute_slide_type", store=True)
     scorm_data = fields.Many2many('ir.attachment')
     nbr_scorm = fields.Integer("Number of Scorms", compute="_compute_slides_statistics", store=True)
     filename = fields.Char()
