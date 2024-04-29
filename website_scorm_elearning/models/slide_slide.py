@@ -78,6 +78,11 @@ class Slide(models.Model):
                 slide.slide_type = 'scorm'
         return res
                 
+    @api.depends('slide_type')
+    def _compute_slide_icon_class(self):
+        slide = self.filtered(lambda slide: slide.slide_type == 'scorm')
+        slide.slide_icon_class = 'fa-file-archive-o'
+        super(Slide, self - slide)._compute_slide_icon_class()
 
     def _compute_quiz_info(self, target_partner, quiz_done=False):
         res = super(Slide, self)._compute_quiz_info(target_partner)
@@ -112,32 +117,27 @@ class Slide(models.Model):
 
     @api.depends('slide_category', 'google_drive_id', 'video_source_type', 'youtube_id')
     def _compute_embed_code(self):
-        try:
+            res = super(Slide, self)._compute_embed_code()
             for rec in self:
-                if rec.slide_category == 'scorm' and rec.scorm_data and not rec.is_tincan:
-                    rec.embed_code = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
-                    rec.embed_code_external = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
-                elif rec.slide_category == 'scorm' and rec.scorm_data and rec.is_tincan:
-                    user_name = self.env.user.name
-                    user_mail = self.env.user.login
-                    end_point = self.env['ir.config_parameter'].get_param('web.base.url') + '/slides/slide'
-                    end_point = urllib.parse.quote(end_point, safe=" ")
-                    actor = "{'name': [%s], mbox: ['mailto':%s]}" % (user_name,user_mail)
-                    actor = json.dumps(actor)
-                    actor = urllib.parse.quote(actor)
-                    rec.embed_code = Markup('<iframe src="%s?endpoint=%s&actor=%s&activity_id=%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename,end_point,actor,rec.id)
-                    rec.embed_code_external = Markup('<iframe src="%s?endpoint=%s&actor=%s&activity_id=%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename,end_point,actor,rec.id)
-                else: 
-                    res = super(Slide, rec)._compute_embed_code()
-                    return res
-        except:
-            for rec in self:
-                if rec.slide_category  == 'scorm' and rec.scorm_data:
-                    rec.embed_code = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
-                    rec.embed_code_external = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
-                else:
-                    res = super(Slide, rec)._compute_embed_code()
-                    return res
+                try:
+                    if rec.slide_category == 'scorm' and rec.scorm_data and not rec.is_tincan:
+                        rec.embed_code = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
+                        rec.embed_code_external = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
+                    elif rec.slide_category == 'scorm' and rec.scorm_data and rec.is_tincan:
+                        user_name = self.env.user.name
+                        user_mail = self.env.user.login
+                        end_point = self.env['ir.config_parameter'].get_param('web.base.url') + '/slides/slide'
+                        end_point = urllib.parse.quote(end_point, safe=" ")
+                        actor = "{'name': [%s], mbox: ['mailto':%s]}" % (user_name,user_mail)
+                        actor = json.dumps(actor)
+                        actor = urllib.parse.quote(actor)
+                        rec.embed_code = Markup('<iframe src="%s?endpoint=%s&actor=%s&activity_id=%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename,end_point,actor,rec.id)
+                        rec.embed_code_external = Markup('<iframe src="%s?endpoint=%s&actor=%s&activity_id=%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename,end_point,actor,rec.id)
+                except:
+                    if rec.slide_category  == 'scorm' and rec.scorm_data:
+                        rec.embed_code = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
+                        rec.embed_code_external = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
+            return res
 
 
     def read_files_from_zip(self):

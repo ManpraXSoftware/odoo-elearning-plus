@@ -9,6 +9,7 @@
                 <div t-if="slide.slide_category == 'scorm'" id="scorm_content" t-att-slide_id="slide.id"
                     class="ratio ratio-4x3 embed-responsive-item mb8" style="height: 600px;">
                     <input type="hidden" id="iframe_src" t-att-value="slide.embed_code" t-att-data-slide-category="slide.slide_category"/>
+                    <t t-esc="slide.embed_code"/>
                 </div>
             </div>
             <span t-attf-class="mx-2 my-1 badge #{'text-bg-success' if slide_completed else 'text-bg-info'}" position="attributes">
@@ -20,14 +21,9 @@
                 <attribute name="t-if" separator=" or " add="aside_slide.slide_type == 'scorm'"/>
             </span>
         </template>
-        <template id="slide_icon_scorm" inherit_id="website_slides.slide_icon">
-            <i t-if="slide.slide_type == 'quiz'" position="after">
-                <i t-if="slide.slide_type == 'scorm'" t-att-class="'fa fa-file-archive-o %s' % icon_class"></i>
-            </i>
-        </template>
         <template id="slide_fullscreen_sidebar_category_scorm_inherit" inherit_id="website_slides.slide_fullscreen_sidebar_category">
             <li t-attf-class="o_wslides_fs_sidebar_list_item d-flex py-1 #{'active' if slide.id == current_slide.id else ''}" position="attributes">
-                <attribute name="t-att-data-embed-code">slide.embed_code if slide.slide_category in ['video', 'document', 'infographic','scorm'] else False</attribute>
+                <attribute name="t-att-data-embed-code">slide.embed_code if slide.slide_category in ['video', 'document', 'infographic', 'scorm'] else False</attribute>
             </li>
         </template>
     </data>
