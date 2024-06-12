@@ -22,13 +22,17 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
                     slideData.embedUrl = $(slideData.embedCode).attr('src');
                     slideData.hasQuestion = !!slideData.hasQuestion;
                     try {
-                        if (!(slideData.isTimer) && !(slideData.hasQuestion) && !(slideData.is_tincan)) {
+                        if (!(slideData.isTimer) && !(slideData.hasQuestion) && !(slideData.is_tincan) && (slideData.scormOnFinish != 'True')) {
                             slideData._autoSetDone = true;
+                        }else if (slideData.scormOnFinish == 'True') {
+                            slideData._autoSetDone = false;
                         }
                     }
                     catch {
-                        if (!(slideData.hasQuestion)) {
+                        if (!(slideData.hasQuestion) && (slideData.scormOnFinish != 'True')) {
                             slideData._autoSetDone = true;
+                        } else if (slideData.scormOnFinish == 'True') {
+                            slideData._autoSetDone = false;
                         }
                     }
                 }
