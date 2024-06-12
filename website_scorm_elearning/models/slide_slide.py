@@ -8,6 +8,7 @@ import tempfile
 import shutil
 import urllib.parse
 from werkzeug import urls
+import xml.etree.ElementTree as ET
 from odoo.http import request
 from markupsafe import Markup
 from odoo import api, fields, models, _
@@ -60,6 +61,20 @@ class Slide(models.Model):
     ], default="scorm11")
     scorm_passed_xp = fields.Integer("Scorm Passed Xp")
     scorm_completed_xp = fields.Integer("Scorm Completed Xp")
+    scorm_completion_on_finish = fields.Boolean("Scorm Completion on Finish")
+    manifest_file = fields.Char()
+
+    @api.onchange('scorm_version')
+    def onchange_scorm_version(self):
+        if self.manifest_file:
+            res = {}
+            scorm_version = self.extract_scorm_version(self.manifest_file)
+            if scorm_version != self.scorm_version:
+                res['warning'] = {
+                    'title': _('Warning'),
+                    'message': _('The scorm version is different from actual scorm verison. Results may vary if you select wrong scorm version.')
+                }
+                return res
 
     @api.depends('slide_ids.sequence', 'slide_ids.slide_category', 'slide_ids.is_published', 'slide_ids.is_category')
     def _compute_slides_statistics(self):
@@ -117,8 +132,8 @@ class Slide(models.Model):
 
     @api.depends('slide_category', 'google_drive_id', 'video_source_type', 'youtube_id')
     def _compute_embed_code(self):
-            res = super(Slide, self)._compute_embed_code()
             for rec in self:
+                super(Slide, rec)._compute_embed_code()
                 try:
                     if rec.slide_category == 'scorm' and rec.scorm_data and not rec.is_tincan:
                         rec.embed_code = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
@@ -137,8 +152,6 @@ class Slide(models.Model):
                     if rec.slide_category  == 'scorm' and rec.scorm_data:
                         rec.embed_code = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
                         rec.embed_code_external = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
-            return res
-
 
     def read_files_from_zip(self):
         file = base64.decodebytes(self.scorm_data.datas)
@@ -149,28 +162,33 @@ class Slide(models.Model):
         f = open(fname, 'r+b')
         f.write(base64.b64decode(zipzip))
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+        manifest_file = None
         with zipfile.ZipFile(fobj, 'r') as zipObj:
             listOfFileNames = zipObj.namelist()
             html_file_name = ''
-            package_name = ''
             html_file_name = list(filter(lambda x: 'index.html' in x, listOfFileNames))
+            manifest_file_name = list(filter(lambda x: 'imsmanifest.xml' in x, listOfFileNames))
             if not html_file_name:
                 html_file_name = list(filter(lambda x: 'index_lms.html' in x, listOfFileNames))
                 if not html_file_name:
                     html_file_name = list(filter(lambda x: 'story.html' in x, listOfFileNames))
-            # for fileName in sorted(listOfFileNames):
-            #     filename = fileName.split('/')
-            #     package_name = self.scorm_data.name.split('.')[0]
-            #     if 'index.html' in filename:
-            #         html_file_name = '/'.join(filename)
-            #         break
-            #     elif 'index_lms.html' in filename:
-            #         html_file_name = '/'.join(filename)
-            #         break
-            #     elif 'story.html' in filename:
-            #         html_file_name = '/'.join(filename)
-            #         break
             source_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id))
             zipObj.extractall(source_dir)
+            if len(manifest_file_name) > 0:
+                manifest_file = f"{source_dir}/{manifest_file_name[0]}"
             self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name[0] if len(html_file_name) > 0 else None)
         f.close()
+        if manifest_file:
+            self.manifest_file = manifest_file
+            self.scorm_version = self.extract_scorm_version(manifest_file)
+
+    def extract_scorm_version(self, manifest_file):
+        tree = ET.parse(manifest_file)
+        root = tree.getroot()
+        # Find the schemaversion element
+        schema_version_element = root.find('.//{http://www.imsproject.org/xsd/imscp_rootv1p1p2}metadata/{http://www.imsproject.org/xsd/imscp_rootv1p1p2}schemaversion')
+        # Check if the version is 1.2
+        if schema_version_element is not None and schema_version_element.text == '1.2':
+            return 'scorm11'
+        else:
+            return 'scorm2004'

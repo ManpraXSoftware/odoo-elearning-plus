@@ -24,6 +24,9 @@ Create Online Courses Using Scorm
             'website_scorm_elearning/static/src/js/slides_course_fullscreen_player.js',
             'website_scorm_elearning/static/src/xml/website_slides_fullscreen.xml',
         ],
+        'web.assets_backend': [
+            'website_scorm_elearning/static/src/scss/slide_slide.scss',
+        ]
     },
     'images': ["static/description/images/scorm_banner.png"],
     'installable': True,
