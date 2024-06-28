@@ -131,7 +131,7 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
                     value: value,
                 }
             })
-            if ((element == 'cmi.completion_status') && (['completed', 'passed'].includes(value))) {
+            if ((['cmi.completion_status', 'cmi.core.lesson_status'].includes(element)) && (['completed', 'passed'].includes(value))) {
                 rpc.query({
                     route: '/slides/slide/set_completed_scorm',
                     params: {
@@ -218,7 +218,7 @@ odoo.define('website_scorm_elearning.fullscreen_scorm', function (require) {
                     value: value,
                 }
             })
-            if (element == 'cmi.core.lesson_status' && (['completed', 'passed'].includes(value))) {
+            if ((['cmi.completion_status', 'cmi.core.lesson_status'].includes(element)) && (['completed', 'passed'].includes(value))) {
                 rpc.query({
                     route: '/slides/slide/set_completed_scorm',
                     params: {
