@@ -2,7 +2,7 @@
 <templates id="template" xml:space="preserve">
     <t t-name="website.slides.fullscreen.content.scorm">
         <div class="player ratio ratio-16x9 embed-responsive-item h-100">
-            <iframe t-att-src="slide.embedUrl" class="o_wslides_iframe_viewer" frameborder="0" allow="autoplay; fullscreen; picture-in-picture"></iframe>
+            <iframe t-att-src="slide.embedUrl" class="o_wslides_iframe_viewer" allow="autoplay; fullscreen"></iframe>
         </div>
     </t>
 </templates>
