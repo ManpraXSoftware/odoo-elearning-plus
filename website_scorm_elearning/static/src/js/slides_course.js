@@ -1,6 +1,7 @@
 /** @odoo-module **/
 
 import publicWidget from '@web/legacy/js/public/public_widget';
+import { rpc } from "@web/core/network/rpc";
 
 var findSlide = function (slideList, matcher) {
     return slideList.find((slide) => {
@@ -11,7 +12,7 @@ var findSlide = function (slideList, matcher) {
 var API = publicWidget.Widget.extend({
     init: function () {
         var result = this._super.apply(this, arguments);
-        this.rpc = this.bindService('rpc')
+        this.rpc = rpc;
         var slideId = parseInt($('.o_wslides_lesson_aside_list_link.active').data('id'));
         var $slides = $('.o_wslides_lesson_aside_list_link').not('[id^="category-collapse-"]');
         var slideList = [];
@@ -82,7 +83,7 @@ var API = publicWidget.Widget.extend({
 var API_1484_11 = publicWidget.Widget.extend({
     init: function () {
         var result = this._super.apply(this, arguments);
-        this.rpc = this.bindService('rpc')
+        this.rpc = rpc;
         var slideId = parseInt($('.o_wslides_lesson_aside_list_link.active').data('id'));
         var $slides = $('.o_wslides_lesson_aside_list_link').not('[id^="category-collapse-"]');
         var slideList = [];
@@ -161,7 +162,7 @@ publicWidget.registry.Scorm = publicWidget.Widget.extend({
 
     init: function() {
         this._super.apply(this, arguments);
-        this.rpc = this.bindService("rpc");
+        this.rpc = rpc;
     },
 
     /**

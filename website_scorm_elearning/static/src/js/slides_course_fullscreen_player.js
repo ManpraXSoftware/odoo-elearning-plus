@@ -3,6 +3,7 @@
 import Fullscreen from "@website_slides/js/slides_course_fullscreen_player";
 import { renderToElement } from "@web/core/utils/render";
 import publicWidget from '@web/legacy/js/public/public_widget';
+import { rpc } from "@web/core/network/rpc";
 
 
 var findSlide = function (slideList, matcher) {
@@ -15,7 +16,7 @@ Fullscreen.include({
 
     init: function (parent, slides, defaultSlideId, channelData){
         var result = this._super.apply(this, arguments);
-        this.rpc = this.bindService("rpc");
+        this.rpc = rpc;
         return result
     },
 
@@ -56,9 +57,9 @@ Fullscreen.include({
     _renderSlide: function (){
         var def = this._super.apply(this, arguments);
         var $content = this.$('.o_wslides_fs_content');
-        var slideId = this.get('slide');
-        if (slideId.category === "scorm"){
-            $content.empty().append(renderToElement('website.slides.fullscreen.content.scorm', {widget: this}));
+        const slide = this._slideValue;
+        if (slide.category === "scorm"){
+            $content.empty().append(renderToElement('website.slides.fullscreen.content.scorm', {slide: slide}));
         }
         return Promise.all([def]);
     },
@@ -66,7 +67,7 @@ Fullscreen.include({
     _onChangeSlide: function () {
         var res = this._super.apply(this, arguments);
         var currentSlide = parseInt(this.$('.o_wslides_fs_sidebar_list_item.active').data('id'));
-        var slide = findSlide(this.slides, {id: this.get('slide').id});
+        const slide = this._slideValue;
         if (!slide.is_tincan && slide.category == 'scorm'){
             this.rpc("/slides/slide/get_scorm_version", {'slide_id': currentSlide
             }).then(function (data){
@@ -88,7 +89,7 @@ Fullscreen.include({
 var API = publicWidget.Widget.extend({
     init: function () {
         var result = this._super.apply(this, arguments);
-        this.rpc = this.bindService('rpc')
+        this.rpc = rpc;
         var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
         var cur_slide = $('.o_wslides_fs_sidebar_list_item.active');
         try {
@@ -170,7 +171,7 @@ var API = publicWidget.Widget.extend({
 var API_1484_11 = publicWidget.Widget.extend({
     init: function () {
         var result = this._super.apply(this, arguments);
-        this.rpc = this.bindService('rpc')
+        this.rpc = rpc;
         var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
         var cur_slide = $('.o_wslides_fs_sidebar_list_item.active');
         try {
