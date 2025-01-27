@@ -7,12 +7,14 @@ import zipfile
 import tempfile
 import shutil
 import urllib.parse
+import boto3
+from io import BytesIO
 from werkzeug import urls
 import xml.etree.ElementTree as ET
 from odoo.http import request
 from markupsafe import Markup
 from odoo import api, fields, models, _
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 from odoo.addons.http_routing.models.ir_http import url_for
 
 
@@ -50,6 +52,16 @@ class Slide(models.Model):
         selection_add=[('scorm', 'Scorm')], ondelete={'scorm': 'set default'})
     slide_type = fields.Selection(
         selection_add=[('scorm', 'Scorm')], ondelete={'scorm': 'set null'}, compute="_compute_slide_type", store=True)
+    is_amazon_s3 = fields.Boolean(
+        string="Scorm upload on Amazon S3",
+        help="Indicates whether the slide file is hosted on Amazon S3"
+    )
+    # s3_note = fields.Text(
+    #     string="S3 Note",
+    #     You may upload SCORM files to Amazon S3 by providing the necessary credentials (Bucket Name, Access Key, and Secret Key) in the Integration Settings. Should you prefer to upload SCORM files locally instead of using Amazon S3, please ensure that the 'Scorm Upload to Amazon S3' option is unchecked.
+    #     default="Manual upload of SCORM files is restricted in production. Use Amazon S3 for secure and scalable SCORM file storage.",
+    #     help="Provides details about the usage of Amazon S3 for hosting slide content."
+    # )
     scorm_data = fields.Many2many('ir.attachment')
     nbr_scorm = fields.Integer("Number of Scorms", compute="_compute_slides_statistics", store=True)
     filename = fields.Char()
@@ -121,7 +133,10 @@ class Slide(models.Model):
             ext = tmp[len(tmp) - 1]
             if ext != 'zip':
                 raise ValidationError(_("The file must be a zip file.!!"))
-            self.read_files_from_zip()
+            if self.is_amazon_s3:
+                self.filename = self._upload_to_s3(self.scorm_data)
+            else:
+                self.read_files_from_zip()
         else:
             if self.filename:
                 folder_dir = self.filename.split('scorm')[-1].split('/')[-2]
@@ -130,6 +145,122 @@ class Slide(models.Model):
                 if os.path.isdir(target_dir):
                     shutil.rmtree(target_dir)
 
+    # def _upload_to_s3(self, scorm_data):
+    #     amazon_access_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_access_key')
+    #     amazon_secret_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_secret_key')
+    #     bucket_name = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_bucket_name')
+
+    #     if not amazon_access_key or not amazon_secret_key or not bucket_name:
+    #         raise UserError(_("Amazon S3 credentials or bucket name are not configured."))
+    #     try:
+    #         # Create an S3 client
+    #         s3 = boto3.client(
+    #             's3',
+    #             aws_access_key_id=amazon_access_key,
+    #             aws_secret_access_key=amazon_secret_key
+    #         )
+
+    #         # Define S3 file path (e.g., "scorm_files/slide_123/file.zip")
+    #         s3_file_path = f"scorm_files/slide_{self.id}/{scorm_data.name}"
+
+    #         # If scorm_data.datas is not in binary format, wrap it in a BytesIO stream
+    #         file_stream = BytesIO(scorm_data.datas) if not isinstance(scorm_data.datas, BytesIO) else scorm_data.datas
+
+    #         # Upload file to S3
+    #         s3.upload_fileobj(
+    #             file_stream,  # Binary content of the file
+    #             bucket_name,
+    #             s3_file_path
+    #         )
+
+    #         # Store the S3 path in the `filename` field
+    #         self.filename = f"https://{bucket_name}.s3.amazonaws.com/{s3_file_path}"
+            
+    #         return True
+    #     except Exception as e:
+    #         raise ValidationError(_("Failed to upload file to Amazon S3: %s" % str(e)))        
+    
+    def _upload_to_s3(self, scorm_data):
+        """
+        Extracts files from a SCORM zip archive and uploads them to Amazon S3.
+        """
+        # Retrieve S3 credentials and bucket name from Odoo configuration
+        amazon_access_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_access_key')
+        amazon_secret_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_secret_key')
+        bucket_name = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_bucket_name')
+
+        if not amazon_access_key or not amazon_secret_key or not bucket_name:
+            raise UserError(_("Amazon S3 credentials or bucket name are not configured."))
+
+        try:
+            # Create an S3 client
+            s3 = boto3.client(
+                's3',
+                aws_access_key_id=amazon_access_key,
+                aws_secret_access_key=amazon_secret_key
+            )
+            
+            try:
+                # Retrieve the region of the bucket
+                bucket_region = s3.get_bucket_location(Bucket=bucket_name).get('LocationConstraint')
+                if not bucket_region:
+                    bucket_region = 'us-east-1'  # Default region for S3 if no location constraint is returned
+            except Exception as e:
+                raise UserError(_("Failed to retrieve bucket region: %s" % str(e)))
+
+            # Decode the base64-encoded zip content
+            try:
+                zip_content = base64.b64decode(scorm_data.datas)
+            except Exception as e:
+                raise UserError(_("Failed to decode the SCORM data: %s" % str(e)))
+
+            # Remove the file extension from the zip file name
+            base_name = os.path.splitext(scorm_data.name)[0]
+
+            story_url = None
+            # Create a temporary directory to extract files
+            with tempfile.TemporaryDirectory() as temp_dir:
+                zip_file_path = os.path.join(temp_dir, scorm_data.name)
+
+                # Save the zip content to a temporary file
+                try:
+                    with open(zip_file_path, 'wb') as zip_file:
+                        zip_file.write(zip_content)
+                except Exception as e:
+                    raise UserError(_("Failed to save SCORM zip content to temporary file: %s" % str(e)))
+
+                # Extract the zip file into the temporary directory
+                extract_dir = os.path.join(temp_dir, f"extracted_files/{base_name}")
+                os.makedirs(extract_dir, exist_ok=True)
+
+                try:
+                    with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+                        zip_ref.extractall(extract_dir)
+                except Exception as e:
+                    raise UserError(_("Failed to extract SCORM zip file: %s" % str(e)))
+
+                # Upload each extracted file to S3
+                try:
+                    for root, _, files in os.walk(extract_dir):
+                        for file_name in files:
+                            file_path = os.path.join(root, file_name)
+                            s3_key = f"{base_name}/{file_name}"  # Define the S3 key for the file
+
+                            with open(file_path, 'rb') as file_stream:
+                                s3.upload_fileobj(file_stream, bucket_name, s3_key)
+
+                            if file_name == "story.html":
+                                url = f"https://{bucket_name}.s3.{bucket_region}.amazonaws.com/{s3_key}"
+                                story_url = url.replace(" ","+")
+                except Exception as e:
+                    raise UserError(_("Failed to upload files to Amazon S3: %s" % str(e)))
+
+            return story_url
+
+        except Exception as e:
+            raise ValidationError(_("An unexpected error occurred while processing the SCORM data: %s" % str(e)))
+
+    
     @api.depends('slide_category', 'google_drive_id', 'video_source_type', 'youtube_id')
     def _compute_embed_code(self):
             for rec in self:
