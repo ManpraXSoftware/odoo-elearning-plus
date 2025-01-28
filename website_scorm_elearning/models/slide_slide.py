@@ -10,6 +10,7 @@ import urllib.parse
 import boto3
 from io import BytesIO
 from werkzeug import urls
+from mimetypes import guess_type
 import xml.etree.ElementTree as ET
 from odoo.http import request
 from markupsafe import Markup
@@ -144,47 +145,8 @@ class Slide(models.Model):
                 target_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id),folder_dir)
                 if os.path.isdir(target_dir):
                     shutil.rmtree(target_dir)
-
-    # def _upload_to_s3(self, scorm_data):
-    #     amazon_access_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_access_key')
-    #     amazon_secret_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_secret_key')
-    #     bucket_name = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_bucket_name')
-
-    #     if not amazon_access_key or not amazon_secret_key or not bucket_name:
-    #         raise UserError(_("Amazon S3 credentials or bucket name are not configured."))
-    #     try:
-    #         # Create an S3 client
-    #         s3 = boto3.client(
-    #             's3',
-    #             aws_access_key_id=amazon_access_key,
-    #             aws_secret_access_key=amazon_secret_key
-    #         )
-
-    #         # Define S3 file path (e.g., "scorm_files/slide_123/file.zip")
-    #         s3_file_path = f"scorm_files/slide_{self.id}/{scorm_data.name}"
-
-    #         # If scorm_data.datas is not in binary format, wrap it in a BytesIO stream
-    #         file_stream = BytesIO(scorm_data.datas) if not isinstance(scorm_data.datas, BytesIO) else scorm_data.datas
-
-    #         # Upload file to S3
-    #         s3.upload_fileobj(
-    #             file_stream,  # Binary content of the file
-    #             bucket_name,
-    #             s3_file_path
-    #         )
-
-    #         # Store the S3 path in the `filename` field
-    #         self.filename = f"https://{bucket_name}.s3.amazonaws.com/{s3_file_path}"
-            
-    #         return True
-    #     except Exception as e:
-    #         raise ValidationError(_("Failed to upload file to Amazon S3: %s" % str(e)))        
     
     def _upload_to_s3(self, scorm_data):
-        """
-        Extracts files from a SCORM zip archive and uploads them to Amazon S3.
-        """
-        # Retrieve S3 credentials and bucket name from Odoo configuration
         amazon_access_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_access_key')
         amazon_secret_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_secret_key')
         bucket_name = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_bucket_name')
@@ -201,10 +163,9 @@ class Slide(models.Model):
             )
             
             try:
-                # Retrieve the region of the bucket
                 bucket_region = s3.get_bucket_location(Bucket=bucket_name).get('LocationConstraint')
                 if not bucket_region:
-                    bucket_region = 'us-east-1'  # Default region for S3 if no location constraint is returned
+                    bucket_region = 'us-east-1'
             except Exception as e:
                 raise UserError(_("Failed to retrieve bucket region: %s" % str(e)))
 
@@ -246,8 +207,11 @@ class Slide(models.Model):
                             file_path = os.path.join(root, file_name)
                             s3_key = f"{base_name}/{file_name}"  # Define the S3 key for the file
 
+                            mime_type, _ = guess_type(file_name)
+                            if mime_type is None:
+                                mime_type = 'application/octet-stream'
                             with open(file_path, 'rb') as file_stream:
-                                s3.upload_fileobj(file_stream, bucket_name, s3_key)
+                                s3.upload_fileobj(file_stream, bucket_name, s3_key,ExtraArgs={'ContentType': mime_type, 'ContentDisposition': 'inline'})
 
                             if file_name == "story.html":
                                 url = f"https://{bucket_name}.s3.{bucket_region}.amazonaws.com/{s3_key}"

@@ -8,13 +8,15 @@
             <field name="arch" type="xml">
                 <field name="document_binary_content" position="after">
                     <field name="is_amazon_s3" invisible="slide_category != 'scorm'"/>
+
                     <!-- <div class="oe_edit_only alert alert-info" role="alert" invisible="slide_category != 'scorm' or not is_amazon_s3">
                         Upload SCORM files to Amazon S3 by providing the credentials in the Integration Settings. To upload locally, uncheck the 'Scorm Upload to Amazon S3' option.
                     </div> -->
-                    <!-- <field name="s3_note" invisible="slide_category != 'scorm'" widget="text" readonly="1"/> -->
                     <field name="scorm_version" invisible="slide_category != 'scorm'" required="slide_category == 'scorm'"/>
                     <field name="scorm_data" widget="many2many_binary" invisible="slide_category != 'scorm'"/>
                     <field name="filename" invisible="slide_category != 'scorm'" string="File Path"/>
+                </field>
+                <field name="user_id" position="before">
                     <field name="scorm_completion_on_finish" invisible="slide_category != 'scorm'"/>
                     <field name="scorm_passed_xp" invisible="slide_category != 'scorm'" required="slide_category == 'scorm'"/>
                     <field name="scorm_completed_xp" invisible="slide_category != 'scorm'" required="slide_category == 'scorm'"/>
