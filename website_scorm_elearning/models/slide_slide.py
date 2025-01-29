@@ -57,12 +57,6 @@ class Slide(models.Model):
         string="Scorm upload on Amazon S3",
         help="Indicates whether the slide file is hosted on Amazon S3"
     )
-    # s3_note = fields.Text(
-    #     string="S3 Note",
-    #     You may upload SCORM files to Amazon S3 by providing the necessary credentials (Bucket Name, Access Key, and Secret Key) in the Integration Settings. Should you prefer to upload SCORM files locally instead of using Amazon S3, please ensure that the 'Scorm Upload to Amazon S3' option is unchecked.
-    #     default="Manual upload of SCORM files is restricted in production. Use Amazon S3 for secure and scalable SCORM file storage.",
-    #     help="Provides details about the usage of Amazon S3 for hosting slide content."
-    # )
     scorm_data = fields.Many2many('ir.attachment')
     nbr_scorm = fields.Integer("Number of Scorms", compute="_compute_slides_statistics", store=True)
     filename = fields.Char()
@@ -205,8 +199,8 @@ class Slide(models.Model):
                     for root, _, files in os.walk(extract_dir):
                         for file_name in files:
                             file_path = os.path.join(root, file_name)
-                            s3_key = f"{base_name}/{file_name}"  # Define the S3 key for the file
-
+                            relative_path = os.path.relpath(file_path, extract_dir)
+                            s3_key = f"{base_name}/{relative_path.replace(os.sep, '/')}"
                             mime_type, _ = guess_type(file_name)
                             if mime_type is None:
                                 mime_type = 'application/octet-stream'
