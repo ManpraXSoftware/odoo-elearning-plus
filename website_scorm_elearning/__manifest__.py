@@ -29,6 +29,7 @@ Create Online Courses Using Scorm
             'website_scorm_elearning/static/src/scss/slide_slide.scss',
         ]
     },
+    'external_dependencies': {'python': ['boto3']},
     'images': ["static/description/images/scorm_banner.png"],
     'installable': True,
     'application': True,
