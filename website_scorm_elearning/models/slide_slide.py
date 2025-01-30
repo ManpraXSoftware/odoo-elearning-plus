@@ -9,6 +9,8 @@ import shutil
 import urllib.parse
 import boto3
 from io import BytesIO
+import logging
+_logger = logging.getLogger(__name__)
 from werkzeug import urls
 from mimetypes import guess_type
 import xml.etree.ElementTree as ET
@@ -262,7 +264,11 @@ class Slide(models.Model):
                 if not html_file_name:
                     html_file_name = list(filter(lambda x: 'story.html' in x, listOfFileNames))
             source_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id))
-            zipObj.extractall(source_dir)
+            try:
+                zipObj.extractall(source_dir)
+            except OSError as e:
+                _logger.warning("Filesystem is read-only, cannot create directory: %s", source_dir)
+                raise UserError("The local filesystem is read-only. SCORM extraction cannot proceed. Please enable S3 upload.")
             if len(manifest_file_name) > 0:
                 manifest_file = f"{source_dir}/{manifest_file_name[0]}"
             self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name[0] if len(html_file_name) > 0 else None)
