@@ -268,7 +268,7 @@ class Slide(models.Model):
                 zipObj.extractall(source_dir)
             except OSError as e:
                 _logger.warning("Filesystem is read-only, cannot create directory: %s", source_dir)
-                raise UserError("The local filesystem is read-only. SCORM extraction cannot proceed. Please enable S3 upload.")
+                raise UserError("The file system is currently read-only, which restricts SCORM extraction. Consider enabling SCORM upload to S3 to proceed smoothly.")
             if len(manifest_file_name) > 0:
                 manifest_file = f"{source_dir}/{manifest_file_name[0]}"
             self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name[0] if len(html_file_name) > 0 else None)
