@@ -29,6 +29,7 @@ class SlidePartnerRelation(models.Model):
 
 class LmsSessionInfo(models.Model):
     _name = 'lms.session.info'
+    _description = 'Lms Session Info'
 
     name = fields.Char("Name")
     value = fields.Char("Value")
@@ -71,6 +72,20 @@ class Slide(models.Model):
     scorm_completed_xp = fields.Integer("Scorm Completed Xp")
     scorm_completion_on_finish = fields.Boolean("Scorm Completion on Finish")
     manifest_file = fields.Char()
+
+    @api.onchange('is_amazon_s3')
+    def _onchange_is_amazon_s3(self):
+        amazon_access_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_access_key')
+        amazon_secret_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_secret_key')
+        bucket_name = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_bucket_name')
+        if self.is_amazon_s3:
+            if not amazon_access_key or not amazon_secret_key or not bucket_name:
+                self.scorm_data = False
+                raise UserError("Amazon S3 credentials or bucket name are not configured.")
+            else:
+                pass
+        else:
+            pass
 
     @api.onchange('scorm_version')
     def onchange_scorm_version(self):
@@ -130,7 +145,8 @@ class Slide(models.Model):
             if ext != 'zip':
                 raise ValidationError(_("The file must be a zip file.!!"))
             if self.is_amazon_s3:
-                self.filename = self._upload_to_s3(self.scorm_data)
+                preferred_file = "index_lms.html" if self.is_tincan else "story.html"
+                self.filename = self._upload_to_s3(self.scorm_data, preferred_file)
             else:
                 self.read_files_from_zip()
         else:
@@ -141,7 +157,7 @@ class Slide(models.Model):
                 if os.path.isdir(target_dir):
                     shutil.rmtree(target_dir)
     
-    def _upload_to_s3(self, scorm_data):
+    def _upload_to_s3(self, scorm_data, preferred_file):
         amazon_access_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_access_key')
         amazon_secret_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_secret_key')
         bucket_name = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_bucket_name')
@@ -198,7 +214,6 @@ class Slide(models.Model):
 
                 # Upload each extracted file to S3
                 try:
-                    index_file = None
                     story_url = None
                     for root, _, files in os.walk(extract_dir):
                         for file_name in files:
@@ -210,15 +225,15 @@ class Slide(models.Model):
                                 mime_type = 'application/octet-stream'
                             with open(file_path, 'rb') as file_stream:
                                 s3.upload_fileobj(file_stream, bucket_name, s3_key,ExtraArgs={'ContentType': mime_type, 'ContentDisposition': 'inline'})
+                            
+                            if file_name == preferred_file:
+                                selected_file = s3_key
 
-                            if file_name == "index.html":
-                                index_file = s3_key
-                            elif file_name == "index_lms.html" and index_file is None:
-                                index_file = s3_key
-                            elif file_name == "story.html" and index_file is None:
-                                index_file = s3_key
-                    if index_file:
-                        story_url = f"https://{bucket_name}.s3.{bucket_region}.amazonaws.com/{index_file}".replace(" ", "+")
+                            # Store fallback options
+                            if file_name in ["index.html", "index_lms.html", "story.html"]:
+                                selected_file = s3_key if not selected_file else selected_file
+                    if selected_file:
+                        story_url = f"https://{bucket_name}.s3.{bucket_region}.amazonaws.com/{selected_file}".replace(" ", "+")
                 except Exception as e:
                     raise UserError(_("Failed to upload files to Amazon S3: %s" % str(e)))
 
@@ -237,15 +252,27 @@ class Slide(models.Model):
                         rec.embed_code = Markup('<iframe src="%s" frameborder="0"  aria-label="%s"></iframe>') % (rec.filename, _('Scorm'))
                         rec.embed_code_external = Markup('<iframe src="%s" frameborder="0"  aria-label="%s"></iframe>') % (rec.filename, _('Scorm'))
                     elif rec.slide_category == 'scorm' and rec.scorm_data and rec.is_tincan:
-                        user_name = self.env.user.name
+                        user_name = self.env.user.id
                         user_mail = self.env.user.login
-                        end_point = self.env['ir.config_parameter'].get_param('web.base.url') + '/slides/slide'
-                        end_point = urllib.parse.quote(end_point, safe=" ")
-                        actor = "{'name': [%s], mbox: ['mailto':%s]}" % (user_name,user_mail)
-                        actor = json.dumps(actor)
-                        actor = urllib.parse.quote(actor)
-                        rec.embed_code = Markup('<iframe src="%s?endpoint=%s&actor=%s&activity_id=%s" frameborder="0"  aria-label="%s"></iframe>') % (rec.filename,end_point,actor,rec.id, _('Scorm'))
-                        rec.embed_code_external = Markup('<iframe src="%s?endpoint=%s&actor=%s&activity_id=%s" frameborder="0"  aria-label="%s"></iframe>') % (rec.filename,end_point,actor,rec.id, _('Scorm'))
+                        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+                        end_point = f"{base_url}/slides/slide"
+                        encoded_endpoint = urllib.parse.quote(end_point, safe=":/?&=")
+                        actor_data = {
+                            "name": [user_name],
+                            "mbox": [f"mailto:{user_mail}"]
+                        }
+                        actor_json = json.dumps(actor_data)  # Convert to JSON string
+                        encoded_actor = urllib.parse.quote(actor_json)  # URL encode the JSON string
+                        iframe_template = (
+                            '<iframe src="{}?endpoint={}&actor={}&activity_id={}" '
+                            'allowFullScreen="true" frameborder="0"></iframe>'
+                        )
+                        rec.embed_code = Markup(iframe_template.format(
+                            rec.filename, encoded_endpoint, encoded_actor, rec.id
+                        ))
+                        rec.embed_code_external = Markup(iframe_template.format(
+                            rec.filename, encoded_endpoint, encoded_actor, rec.id
+                        ))
                 except Exception as e:
                     if rec.slide_category  == 'scorm' and rec.scorm_data:
                         rec.embed_code = Markup('<iframe src="%s" frameborder="0" autoplay="1"></iframe>') % (rec.filename)
