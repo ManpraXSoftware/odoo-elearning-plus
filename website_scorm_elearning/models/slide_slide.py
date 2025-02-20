@@ -61,7 +61,7 @@ class Slide(models.Model):
     )
     scorm_data = fields.Many2many('ir.attachment')
     nbr_scorm = fields.Integer("Number of Scorms", compute="_compute_slides_statistics", store=True)
-    filename = fields.Char(readonly=True, required=True)
+    filename = fields.Char(readonly=True, required=True, default='')
     embed_code = fields.Html('Embed Code', readonly=True, compute='_compute_embed_code')
     embed_code_external = fields.Html('External Embed Code', readonly=True, compute='_compute_embed_code')
     scorm_version = fields.Selection([
