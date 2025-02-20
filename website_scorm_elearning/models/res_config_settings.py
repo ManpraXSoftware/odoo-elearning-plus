@@ -1,4 +1,7 @@
-from odoo import models, fields
+import boto3
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError, ClientError
+from odoo import models, fields, _
+from odoo.exceptions import UserError
 
 class ResConfigSettings(models.TransientModel):
     """
@@ -18,3 +21,46 @@ class ResConfigSettings(models.TransientModel):
     is_amazon_connector = fields.Boolean(
         config_parameter='amazon_s3_connector.amazon_connector', default=False,
         help='Enable or disable the Amazon S3 connector.')
+    
+    def action_test_amazon_s3_connection(self):
+        """
+        Test the S3 connection using the provided credentials.
+        """
+        self.ensure_one()
+        amazon_access_key = self.amazon_access_key
+        amazon_secret_key = self.amazon_secret_key
+        bucket_name = self.amazon_bucket_name
+
+        if not amazon_access_key or not amazon_secret_key or not bucket_name:
+            raise UserError(_("Amazon S3 credentials or bucket name are missing."))
+
+        try:
+            s3_client = boto3.client(
+                's3',
+                aws_access_key_id=amazon_access_key,
+                aws_secret_access_key=amazon_secret_key
+            )
+
+            s3_client.head_bucket(Bucket=bucket_name)
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _("Success"),
+                    'type': 'success',
+                    'message': _("Connection Successful"),
+                    'sticky': False,
+                },
+            }
+        except Exception as e:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _("Error Occured"),
+                    'type': 'danger',
+                    # 'message': _("Unexpected error: %s") % str(e),
+                    'message': _("Check Credentials Again"),
+                    'sticky': False,
+                },
+            }

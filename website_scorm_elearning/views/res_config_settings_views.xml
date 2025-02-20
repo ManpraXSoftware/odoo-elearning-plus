@@ -38,6 +38,12 @@
                             <field name="amazon_bucket_name" invisible="(is_amazon_connector == False)"/>
                         </span>
                     </div>
+                    <div class="o_setting_right_pane" invisible="(is_amazon_connector == False)">
+                        <button name="action_test_amazon_s3_connection"
+                                type="object"
+                                string="Test Connection"
+                                class="btn btn-primary"/>
+                    </div>
                 </div>
             </xpath>
         </field>
