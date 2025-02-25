@@ -76,9 +76,9 @@ class Slide(models.Model):
 
     @api.onchange('is_amazon_s3')
     def _onchange_is_amazon_s3(self):
-        amazon_access_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_access_key')
-        amazon_secret_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_secret_key')
-        bucket_name = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_bucket_name')
+        amazon_access_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_access_key')
+        amazon_secret_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_secret_key')
+        bucket_name = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_bucket_name')
         if self.is_amazon_s3:
             if not amazon_access_key or not amazon_secret_key or not bucket_name:
                 self.scorm_data = False
@@ -159,9 +159,9 @@ class Slide(models.Model):
                     shutil.rmtree(target_dir)
     
     def _upload_to_s3(self, scorm_data):
-        amazon_access_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_access_key')
-        amazon_secret_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_secret_key')
-        bucket_name = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_bucket_name')
+        amazon_access_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_access_key')
+        amazon_secret_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_secret_key')
+        bucket_name = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_bucket_name')
 
         if not amazon_access_key or not amazon_secret_key or not bucket_name:
             raise UserError("Amazon S3 credentials or bucket name are not configured in settings.")
