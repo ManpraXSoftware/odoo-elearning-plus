@@ -62,7 +62,7 @@ class Slide(models.Model):
     )
     scorm_data = fields.Many2many('ir.attachment')
     nbr_scorm = fields.Integer("Number of Scorms", compute="_compute_slides_statistics", store=True)
-    filename = fields.Char(readonly=True, required=True, default='')
+    filename = fields.Char()
     embed_code = fields.Html('Embed Code', readonly=True, compute='_compute_embed_code')
     embed_code_external = fields.Html('External Embed Code', readonly=True, compute='_compute_embed_code')
     scorm_version = fields.Selection([
@@ -76,9 +76,9 @@ class Slide(models.Model):
 
     @api.onchange('is_amazon_s3')
     def _onchange_is_amazon_s3(self):
-        amazon_access_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_access_key')
-        amazon_secret_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_secret_key')
-        bucket_name = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_bucket_name')
+        amazon_access_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_access_key')
+        amazon_secret_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_secret_key')
+        bucket_name = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_bucket_name')
         if self.is_amazon_s3:
             if not amazon_access_key or not amazon_secret_key or not bucket_name:
                 self.scorm_data = False
@@ -146,8 +146,8 @@ class Slide(models.Model):
             if ext != 'zip':
                 raise ValidationError(_("The file must be a zip file.!!"))
             if self.is_amazon_s3:
-                preferred_file = "index_lms.html" if self.is_tincan else "story.html"
-                self.filename = self._upload_to_s3(self.scorm_data, preferred_file)
+                # preferred_file = "index_lms.html" if self.is_tincan else "story.html"
+                self.filename = self._upload_to_s3(self.scorm_data)
             else:
                 self.read_files_from_zip()
         else:
@@ -158,12 +158,12 @@ class Slide(models.Model):
                 if os.path.isdir(target_dir):
                     shutil.rmtree(target_dir)
     
-    def _upload_to_s3(self, scorm_data, preferred_file):
-        amazon_access_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_access_key')
-        amazon_secret_key = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_secret_key')
-        bucket_name = self.env['ir.config_parameter'].get_param('amazon_s3_connector.amazon_bucket_name')
+    def _upload_to_s3(self, scorm_data):
+        amazon_access_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_access_key')
+        amazon_secret_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_secret_key')
+        bucket_name = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_bucket_name')
 
-        if not amazon_access_key and not amazon_secret_key and not bucket_name:
+        if not amazon_access_key or not amazon_secret_key or not bucket_name:
             raise UserError("Amazon S3 credentials or bucket name are not configured in settings.")
 
         try:
@@ -175,9 +175,7 @@ class Slide(models.Model):
             )
             
             try:
-                bucket_region = s3.get_bucket_location(Bucket=bucket_name).get('LocationConstraint')
-                if not bucket_region:
-                    bucket_region = 'us-east-1'
+                bucket_region = s3.get_bucket_location(Bucket=bucket_name).get('LocationConstraint') or 'us-east-1'
             except Exception as e:
                 raise UserError(_("Failed to retrieve bucket region: %s" % str(e)))
 
@@ -192,6 +190,7 @@ class Slide(models.Model):
             channel_id = int(str(self.channel_id.id).split("_")[1])
             file_prefix = f"{base_name}_Scorm_{channel_id}"
             story_url = None
+            selected_file = None
             # Create a temporary directory to extract files
             with tempfile.TemporaryDirectory() as temp_dir:
                 zip_file_path = os.path.join(temp_dir, scorm_data.name)
@@ -215,7 +214,7 @@ class Slide(models.Model):
 
                 # Upload each extracted file to S3
                 try:
-                    story_url = None
+                    s3_file_url_base = f"https://{bucket_name}.s3.{bucket_region}.amazonaws.com/"
                     for root, _, files in os.walk(extract_dir):
                         for file_name in files:
                             file_path = os.path.join(root, file_name)
@@ -225,15 +224,21 @@ class Slide(models.Model):
                             if mime_type is None:
                                 mime_type = 'application/octet-stream'
                             with open(file_path, 'rb') as file_stream:
-                                s3.upload_fileobj(file_stream, bucket_name, s3_key,ExtraArgs={'ContentType': mime_type, 'ContentDisposition': 'inline'})                            
-                            if file_name == preferred_file:
-                                selected_file = s3_key
-                            if file_name in ["index.html", "index_lms.html", "story.html"]:
-                                selected_file = s3_key if not selected_file else selected_file
+                                s3.upload_fileobj(file_stream, bucket_name, s3_key, ExtraArgs={'ContentType': mime_type, 'ContentDisposition': 'inline'})
+                            encoded_s3_key = quote(s3_key, safe='/()')
+                            if self.is_tincan and file_name == 'index_lms.html':
+                                selected_file = encoded_s3_key
+                            elif file_name == 'index.html':
+                                selected_file = encoded_s3_key
+                            elif file_name == 'story.html' and not selected_file:
+                                selected_file = encoded_s3_key  # Set only if nothing else is selected
+
+                    # If we have a valid selected file, create the final URL
                     if selected_file:
-                        story_url = f"https://{bucket_name}.s3.{bucket_region}.amazonaws.com/{selected_file}".replace(" ", "+")
+                        story_url = s3_file_url_base + selected_file
+
                 except Exception as e:
-                    raise UserError(_("Failed to upload files to Amazon S3: %s" % str(e)))
+                    raise ValidationError("Failed to upload files to Amazon S3: %s" % str(e))
 
             return story_url
 
@@ -298,12 +303,12 @@ class Slide(models.Model):
             source_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id))
             try:
                 zipObj.extractall(source_dir)
+                if len(manifest_file_name) > 0:
+                    manifest_file = f"{source_dir}/{manifest_file_name[0]}"
+                self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name[0] if len(html_file_name) > 0 else None)
             except OSError as e:
                 _logger.warning("Filesystem is read-only, cannot create directory: %s", source_dir)
-                raise UserError("The file system is currently read-only, which restricts SCORM extraction. Consider enabling SCORM upload to S3 to proceed smoothly.")
-            if len(manifest_file_name) > 0:
-                manifest_file = f"{source_dir}/{manifest_file_name[0]}"
-            self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name[0] if len(html_file_name) > 0 else None)
+                raise UserError("The file is read-only, so it can't be uploaded to SCORM. Please enable Scorm upload on Amazon S3 to continue.")
         f.close()
         if manifest_file:
             self.manifest_file = manifest_file

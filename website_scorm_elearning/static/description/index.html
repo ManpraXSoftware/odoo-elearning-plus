@@ -21,10 +21,10 @@
                style="width:40px; color:#00438b"></i>
             Media directory is in "{custom addons path}/website_scorm_elearning/static/media".
          </li>
-         <li style="display: flex;align-items: center;padding: 8px 0;font-size: 18px;"><i class="fa fa-check-circle-o"
-            style="width:40px; color:#00438b"></i>
-         Configure AWS S3 credentials in the system settings to enable SCORM package upload to S3.
-      </li>
+         <li style="display: flex; align-items: center; padding: 8px 0; font-size: 18px;"><i class="fa fa-check-circle-o" style="width: 40px; color: #00438b;"></i>
+            Or you can connect Odoo with Amazon S3 by adding credentials in the configuration. 
+            This will store the SCORM package in an S3 bucket, and you can retrieve the link.
+        </li>
       </ul>
       <h2 style="font-weight: 600;font-size: 1.8rem;margin-top: 15px;">Key Highlights</h2>
       <ul style=" padding: 0 1px; list-style: none; ">
@@ -36,14 +36,6 @@
                style="width:40px; color:#00438b"></i>
             Added support to upload Scorm Packages to the Elearning courses.
          </li>
-         <li style="display: flex;align-items: center;padding: 8px 0;font-size: 18px;"><i class="fa fa-check-circle-o"
-            style="width:40px; color:#00438b"></i>
-            Support for uploading SCORM packages directly to Amazon S3.
-         </li>
-         <li style="display: flex;align-items: center;padding: 8px 0;font-size: 18px;"><i class="fa fa-check-circle-o"
-               style="width:40px; color:#00438b"></i>
-            Secure cloud storage for SCORM files with S3 integration.
-         </li>
       </ul>
    </div>
 </div>
@@ -54,6 +46,18 @@
          <div>
             <div>
                <div class="col-xs-12 col-sm-12 col-md-12 mb16 mt16" style="float: left;">
+                  <h3 class="alert" style="font-weight: 400; color: #091E42; background: #fff; text-align: left; border-radius: 0; font-size: 18px;">
+                     <i class="fa fa-check-circle-o" style="width: 40px; color: #00438b;"></i>
+                     Add configuration for Amazon S3 bucket by going to General Settings, saving the data, and testing the connection. This will connect Odoo with Amazon S3.
+                  </h3>
+                  <div style="text-align: center;"><img class="img img-responsive center-block"
+                     style="border-top-left-radius: 10px;border-top-right-radius: 10px; width: 80%;"
+                     src="images/configuration.png">
+                  </div>
+               </div>
+            </div>
+            <div style="min-height: 0px;">
+               <div class="col-xs-12 col-sm-12 col-md-12 mb16 mt16" style="float: left;">
                   <h3 class="alert"
                      style="font-weight:400;color: #091E42;background: #fff;text-align: left;border-radius: 0; font-size: 18px;">
                      <i class="fa fa-check-circle-o" style="width:40px; color:#00438b"></i>
@@ -61,7 +65,7 @@
                   </h3>
                   <div style="text-align: center;"><img class="img img-responsive center-block"
                         style="border-top-left-radius: 10px;border-top-right-radius: 10px; width: 80%;"
-                        src="images/screen5.png">
+                        src="images/screen1.png">
                   </div>
                </div>
             </div>
