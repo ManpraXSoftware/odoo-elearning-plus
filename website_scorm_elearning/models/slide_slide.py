@@ -262,7 +262,7 @@ class Slide(models.Model):
                         encoded_endpoint = urllib.parse.quote(end_point, safe=":/?&=")
                         actor_data = {
                             "name": [user_name],
-                            "mbox": [f"mailto:{user_mail}"]
+                            "mbox": [f"mailto:{user_mail},{rec.id}"]
                         }
                         actor_json = json.dumps(actor_data)  # Convert to JSON string
                         encoded_actor = urllib.parse.quote(actor_json)  # URL encode the JSON string
