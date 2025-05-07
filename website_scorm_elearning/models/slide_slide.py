@@ -12,8 +12,11 @@ import xml.etree.ElementTree as ET
 from odoo.http import request
 from markupsafe import Markup
 from odoo import api, fields, models, _
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 from odoo.addons.http_routing.models.ir_http import url_for
+import logging
+
+_logger = logging.getLogger(__name__)
 
 
 class SlidePartnerRelation(models.Model):
@@ -156,28 +159,71 @@ class Slide(models.Model):
     def read_files_from_zip(self):
         file = base64.decodebytes(self.scorm_data.datas)
         fobj = tempfile.NamedTemporaryFile(delete=False)
-        fname = fobj.name
         fobj.write(file)
-        zipzip = self.scorm_data.datas
-        f = open(fname, 'r+b')
-        f.write(base64.b64decode(zipzip))
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+        fobj.flush()
+        fobj.seek(0)
+
+        path = os.path.dirname(os.path.abspath(__file__))
         manifest_file = None
-        with zipfile.ZipFile(fobj, 'r') as zipObj:
-            listOfFileNames = zipObj.namelist()
-            html_file_name = ''
-            html_file_name = list(filter(lambda x: 'index.html' in x, listOfFileNames))
-            manifest_file_name = list(filter(lambda x: 'imsmanifest.xml' in x, listOfFileNames))
-            if not html_file_name:
-                html_file_name = list(filter(lambda x: 'index_lms.html' in x, listOfFileNames))
+        html_file_name = None
+
+        source_dir = os.path.join(os.path.split(path)[-2], "static", "media", "scorm", str(self.id))
+        
+        try:
+            with zipfile.ZipFile(fobj, 'r') as zipObj:
+                listOfFileNames = zipObj.namelist()
+
+                # Extract all contents
+                zipObj.extractall(source_dir)
+
+                # Find imsmanifest.xml (to store for version later)
+                manifest_file_name = list(filter(lambda x: 'imsmanifest.xml' in x, listOfFileNames))
+                if manifest_file_name:
+                    manifest_file = os.path.join(source_dir, manifest_file_name[0])
+
+                # Scan all XML files to find <launch> or <launch><location>
+                for name in listOfFileNames:
+                    if name.endswith(".xml"):
+                        try:
+                            xml_path = os.path.join(source_dir, name)
+                            tree = ET.parse(xml_path)
+                            root = tree.getroot()
+
+                            # Check for direct <launch>
+                            launch = root.find('.//launch')
+                            if launch is not None:
+                                if launch.text and launch.text.strip():
+                                    html_file_name = launch.text.strip()
+                                    break
+                                # If it has nested <location>
+                                location = launch.find('location')
+                                if location is not None and location.text:
+                                    html_file_name = location.text.strip()
+                                    break
+                        except ET.ParseError:
+                            continue  # Skip malformed XMLs
+
+                # If still not found, fallback to known HTML names
                 if not html_file_name:
-                    html_file_name = list(filter(lambda x: 'story.html' in x, listOfFileNames))
-            source_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id))
-            zipObj.extractall(source_dir)
-            if len(manifest_file_name) > 0:
-                manifest_file = f"{source_dir}/{manifest_file_name[0]}"
-            self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name[0] if len(html_file_name) > 0 else None)
-        f.close()
+                    html_candidates = ['index.html', 'index_lms.html', 'story.html']
+                    for candidate in html_candidates:
+                        matched = list(filter(lambda x: candidate in x, listOfFileNames))
+                        if matched:
+                            html_file_name = matched[0]
+                            break
+
+                if not html_file_name:
+                    raise UserError("Could not determine the launch HTML file from SCORM package.")
+
+                self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name)
+
+        except OSError as e:
+            _logger.warning("Filesystem is read-only, cannot create directory: %s", source_dir)
+            raise UserError("The file is read-only, so it can't be uploaded to SCORM. Please enable Scorm upload on Amazon S3 to continue.")
+        finally:
+            fobj.close()
+
+        # Extract SCORM version
         if manifest_file:
             self.manifest_file = manifest_file
             self.scorm_version = self.extract_scorm_version(manifest_file)
