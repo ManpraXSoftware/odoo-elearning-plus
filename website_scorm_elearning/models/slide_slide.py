@@ -17,8 +17,11 @@ import xml.etree.ElementTree as ET
 from odoo.http import request
 from markupsafe import Markup
 from odoo import api, fields, models, _
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import UserError, UserError, ValidationError
 from odoo.addons.http_routing.models.ir_http import url_for
+import logging
+
+_logger = logging.getLogger(__name__)
 
 
 class SlidePartnerRelation(models.Model):
