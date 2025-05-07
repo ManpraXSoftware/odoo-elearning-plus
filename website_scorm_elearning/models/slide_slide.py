@@ -353,40 +353,6 @@ class Slide(models.Model):
             self.manifest_file = manifest_file
             self.scorm_version = self.extract_scorm_version(manifest_file)
 
-    # def read_files_from_zip(self):
-    #     file = base64.decodebytes(self.scorm_data.datas)
-    #     fobj = tempfile.NamedTemporaryFile(delete=False)
-    #     fname = fobj.name
-    #     fobj.write(file)
-    #     zipzip = self.scorm_data.datas
-    #     f = open(fname, 'r+b')
-    #     f.write(base64.b64decode(zipzip))
-    #     path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-    #     manifest_file = None
-    #     with zipfile.ZipFile(fobj, 'r') as zipObj:
-    #         listOfFileNames = zipObj.namelist()
-    #         html_file_name = ''
-    #         html_file_name = list(filter(lambda x: 'index.html' in x, listOfFileNames))
-    #         manifest_file_name = list(filter(lambda x: 'imsmanifest.xml' in x, listOfFileNames))
-    #         if not html_file_name:
-    #             html_file_name = list(filter(lambda x: 'index_lms.html' in x, listOfFileNames))
-    #             if not html_file_name:
-    #                 html_file_name = list(filter(lambda x: 'story.html' in x, listOfFileNames))
-    #         source_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id))
-    #         try:
-    #             zipObj.extractall(source_dir)
-    #             if len(manifest_file_name) > 0:
-    #                 manifest_file = f"{source_dir}/{manifest_file_name[0]}"
-    #             self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name[0] if len(html_file_name) > 0 else None)
-    #         except OSError as e:
-    #             _logger.warning("Filesystem is read-only, cannot create directory: %s", source_dir)
-    #             raise UserError("The file is read-only, so it can't be uploaded to SCORM. Please enable Scorm upload on Amazon S3 to continue.")
-    #     f.close()
-    #     if manifest_file:
-    #         self.manifest_file = manifest_file
-    #         self.scorm_version = self.extract_scorm_version(manifest_file)
-
-    
     def extract_scorm_version(self, manifest_file):
         tree = ET.parse(manifest_file)
         root = tree.getroot()
