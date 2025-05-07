@@ -167,42 +167,37 @@ class Slide(models.Model):
             raise UserError("Amazon S3 credentials or bucket name are not configured in settings.")
 
         try:
-            # Create an S3 client
             s3 = boto3.client(
                 's3',
                 aws_access_key_id=amazon_access_key,
                 aws_secret_access_key=amazon_secret_key
             )
-            
+
             try:
                 bucket_region = s3.get_bucket_location(Bucket=bucket_name).get('LocationConstraint') or 'us-east-1'
             except Exception as e:
                 raise UserError(_("Failed to retrieve bucket region: %s" % str(e)))
 
-            # Decode the base64-encoded zip content
             try:
                 zip_content = base64.b64decode(scorm_data.datas)
             except Exception as e:
                 raise UserError(_("Failed to decode the SCORM data: %s" % str(e)))
 
-            # Remove the file extension from the zip file name
             base_name = os.path.splitext(scorm_data.name)[0]
             channel_id = int(str(self.channel_id.id).split("_")[1])
             file_prefix = f"{base_name}_Scorm_{channel_id}"
             story_url = None
             selected_file = None
-            # Create a temporary directory to extract files
+
             with tempfile.TemporaryDirectory() as temp_dir:
                 zip_file_path = os.path.join(temp_dir, scorm_data.name)
 
-                # Save the zip content to a temporary file
                 try:
                     with open(zip_file_path, 'wb') as zip_file:
                         zip_file.write(zip_content)
                 except Exception as e:
                     raise UserError(_("Failed to save SCORM zip content to temporary file: %s" % str(e)))
 
-                # Extract the zip file into the temporary directory
                 extract_dir = os.path.join(temp_dir, f"extracted_files/{file_prefix}")
                 os.makedirs(extract_dir, exist_ok=True)
 
@@ -212,28 +207,66 @@ class Slide(models.Model):
                 except Exception as e:
                     raise UserError(_("Failed to extract SCORM zip file: %s" % str(e)))
 
-                # Upload each extracted file to S3
+                # Look for launch file in XMLs
+                launch_file_from_xml = None
+                for root_dir, _, files in os.walk(extract_dir):
+                    for file_name in files:
+                        if file_name.lower().endswith('.xml'):
+                            file_path = os.path.join(root_dir, file_name)
+                            try:
+                                tree = ET.parse(file_path)
+                                root = tree.getroot()
+                                for launch_tag in root.findall('.//launch'):
+                                    # Case: <launch lang="und">index_lms.html</launch>
+                                    if launch_tag.text and launch_tag.text.strip():
+                                        launch_file_from_xml = launch_tag.text.strip()
+                                        break
+                                    # Case: <launch><location><![CDATA[ shared/launchpage.html ]]></location></launch>
+                                    location_tag = launch_tag.find('location')
+                                    if location_tag is not None and location_tag.text:
+                                        launch_file_from_xml = location_tag.text.strip()
+                                        break
+                            except Exception:
+                                continue  # skip unreadable or malformed XML
+
+                    if launch_file_from_xml:
+                        break  # stop if launch file found
+
+                # Upload all files to S3
                 try:
                     s3_file_url_base = f"https://{bucket_name}.s3.{bucket_region}.amazonaws.com/"
-                    for root, _, files in os.walk(extract_dir):
+                    for root_dir, _, files in os.walk(extract_dir):
                         for file_name in files:
-                            file_path = os.path.join(root, file_name)
+                            file_path = os.path.join(root_dir, file_name)
                             relative_path = os.path.relpath(file_path, extract_dir)
                             s3_key = f"{file_prefix}/{relative_path.replace(os.sep, '/')}"
                             mime_type, _ = guess_type(file_name)
                             if mime_type is None:
                                 mime_type = 'application/octet-stream'
                             with open(file_path, 'rb') as file_stream:
-                                s3.upload_fileobj(file_stream, bucket_name, s3_key, ExtraArgs={'ContentType': mime_type, 'ContentDisposition': 'inline'})
-                            encoded_s3_key = quote(s3_key, safe='/()')
-                            if self.is_tincan and file_name == 'index_lms.html':
-                                selected_file = encoded_s3_key
-                            elif file_name == 'index.html':
-                                selected_file = encoded_s3_key
-                            elif file_name == 'story.html' and not selected_file:
-                                selected_file = encoded_s3_key  # Set only if nothing else is selected
+                                s3.upload_fileobj(
+                                    file_stream,
+                                    bucket_name,
+                                    s3_key,
+                                    ExtraArgs={'ContentType': mime_type, 'ContentDisposition': 'inline'}
+                                )
 
-                    # If we have a valid selected file, create the final URL
+                            encoded_s3_key = quote(s3_key, safe='/()')
+
+                            # Select the correct launch file
+                            normalized_rel_path = relative_path.replace(os.sep, '/')
+                            if launch_file_from_xml and normalized_rel_path.endswith(launch_file_from_xml):
+                                selected_file = encoded_s3_key
+
+                            # Fallback options if no XML match
+                            elif not selected_file:
+                                if file_name == 'index_lms.html':
+                                    selected_file = encoded_s3_key
+                                elif file_name == 'index.html':
+                                    selected_file = encoded_s3_key
+                                elif file_name == 'story.html':
+                                    selected_file = encoded_s3_key
+
                     if selected_file:
                         story_url = s3_file_url_base + selected_file
 
@@ -245,7 +278,7 @@ class Slide(models.Model):
         except Exception as e:
             raise ValidationError("An unexpected error occurred while processing the SCORM data: %s" % str(e))
 
-    
+
     @api.depends('slide_category', 'google_drive_id', 'video_source_type', 'youtube_id')
     def _compute_embed_code(self):
             for rec in self:
@@ -284,35 +317,75 @@ class Slide(models.Model):
     def read_files_from_zip(self):
         file = base64.decodebytes(self.scorm_data.datas)
         fobj = tempfile.NamedTemporaryFile(delete=False)
-        fname = fobj.name
         fobj.write(file)
-        zipzip = self.scorm_data.datas
-        f = open(fname, 'r+b')
-        f.write(base64.b64decode(zipzip))
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+        fobj.flush()
+        fobj.seek(0)
+
+        path = os.path.dirname(os.path.abspath(__file__))
         manifest_file = None
-        with zipfile.ZipFile(fobj, 'r') as zipObj:
-            listOfFileNames = zipObj.namelist()
-            html_file_name = ''
-            html_file_name = list(filter(lambda x: 'index.html' in x, listOfFileNames))
-            manifest_file_name = list(filter(lambda x: 'imsmanifest.xml' in x, listOfFileNames))
-            if not html_file_name:
-                html_file_name = list(filter(lambda x: 'index_lms.html' in x, listOfFileNames))
-                if not html_file_name:
-                    html_file_name = list(filter(lambda x: 'story.html' in x, listOfFileNames))
-            source_dir = os.path.join(os.path.split(path)[-2],"static","media","scorm",str(self.id))
-            try:
+        html_file_name = None
+
+        source_dir = os.path.join(os.path.split(path)[-2], "static", "media", "scorm", str(self.id))
+        
+        try:
+            with zipfile.ZipFile(fobj, 'r') as zipObj:
+                listOfFileNames = zipObj.namelist()
+
+                # Extract all contents
                 zipObj.extractall(source_dir)
-                if len(manifest_file_name) > 0:
-                    manifest_file = f"{source_dir}/{manifest_file_name[0]}"
-                self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name[0] if len(html_file_name) > 0 else None)
-            except OSError as e:
-                _logger.warning("Filesystem is read-only, cannot create directory: %s", source_dir)
-                raise UserError("The file is read-only, so it can't be uploaded to SCORM. Please enable Scorm upload on Amazon S3 to continue.")
-        f.close()
+
+                # Find imsmanifest.xml (to store for version later)
+                manifest_file_name = list(filter(lambda x: 'imsmanifest.xml' in x, listOfFileNames))
+                if manifest_file_name:
+                    manifest_file = os.path.join(source_dir, manifest_file_name[0])
+
+                # Scan all XML files to find <launch> or <launch><location>
+                for name in listOfFileNames:
+                    if name.endswith(".xml"):
+                        try:
+                            xml_path = os.path.join(source_dir, name)
+                            tree = ET.parse(xml_path)
+                            root = tree.getroot()
+
+                            # Check for direct <launch>
+                            launch = root.find('.//launch')
+                            if launch is not None:
+                                if launch.text and launch.text.strip():
+                                    html_file_name = launch.text.strip()
+                                    break
+                                # If it has nested <location>
+                                location = launch.find('location')
+                                if location is not None and location.text:
+                                    html_file_name = location.text.strip()
+                                    break
+                        except ET.ParseError:
+                            continue  # Skip malformed XMLs
+
+                # If still not found, fallback to known HTML names
+                if not html_file_name:
+                    html_candidates = ['index.html', 'index_lms.html', 'story.html']
+                    for candidate in html_candidates:
+                        matched = list(filter(lambda x: candidate in x, listOfFileNames))
+                        if matched:
+                            html_file_name = matched[0]
+                            break
+
+                if not html_file_name:
+                    raise UserError("Could not determine the launch HTML file from SCORM package.")
+
+                self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name)
+
+        except OSError as e:
+            _logger.warning("Filesystem is read-only, cannot create directory: %s", source_dir)
+            raise UserError("The file is read-only, so it can't be uploaded to SCORM. Please enable Scorm upload on Amazon S3 to continue.")
+        finally:
+            fobj.close()
+
+        # Extract SCORM version
         if manifest_file:
             self.manifest_file = manifest_file
             self.scorm_version = self.extract_scorm_version(manifest_file)
+
 
     def extract_scorm_version(self, manifest_file):
         tree = ET.parse(manifest_file)
