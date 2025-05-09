@@ -19,6 +19,7 @@ from markupsafe import Markup
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError, UserError, ValidationError
 from odoo.addons.http_routing.models.ir_http import url_for
+from urllib.parse import quote
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -168,6 +169,17 @@ class Slide(models.Model):
 
         if not amazon_access_key or not amazon_secret_key or not bucket_name:
             raise UserError("Amazon S3 credentials or bucket name are not configured in settings.")
+        
+        def find_case_insensitive(name, file_list):
+            return next((f for f in file_list if f.lower() == name.lower()), None)
+
+        def find_with_alt_extensions(base_name, ext, file_list):
+            alt_ext = '.html' if ext == '.htm' else '.htm'
+            alt_name = base_name + alt_ext
+            return find_case_insensitive(alt_name, file_list)
+
+        def strip_namespace(tag):
+            return tag.split('}')[-1] if '}' in tag else tag
 
         try:
             s3 = boto3.client(
@@ -219,16 +231,33 @@ class Slide(models.Model):
                             try:
                                 tree = ET.parse(file_path)
                                 root = tree.getroot()
-                                for launch_tag in root.findall('.//launch'):
-                                    # Case: <launch lang="und">index_lms.html</launch>
-                                    if launch_tag.text and launch_tag.text.strip():
-                                        launch_file_from_xml = launch_tag.text.strip()
-                                        break
-                                    # Case: <launch><location><![CDATA[ shared/launchpage.html ]]></location></launch>
-                                    location_tag = launch_tag.find('location')
-                                    if location_tag is not None and location_tag.text:
-                                        launch_file_from_xml = location_tag.text.strip()
-                                        break
+
+                                # Look for <resource> with sco
+                                for res in root.iter():
+                                    if strip_namespace(res.tag) == 'resource':
+                                        scorm_type = res.attrib.get('{http://www.adlnet.org/xsd/adlcp_rootv1p2}scormtype') or res.attrib.get('scormType')
+                                        print (res.attrib)
+                                        href = res.attrib.get('href')
+                                        if scorm_type and href:
+                                            base, ext = os.path.splitext(href)
+                                            launch_file_from_xml = (
+                                                href if href in files else
+                                                find_case_insensitive(href, files) or
+                                                find_with_alt_extensions(base, ext.lower(), files)
+                                            )
+                                            if launch_file_from_xml:
+                                                break
+                                        
+
+                                # Look for <launch><location> or <launch>text
+                                if not launch_file_from_xml:
+                                    launch = root.find('.//launch')
+                                    if launch is not None:
+                                        if launch.text:
+                                            launch_file_from_xml = launch.text.strip()
+                                        elif launch.find('location') is not None:
+                                            launch_file_from_xml = launch.find('location').text.strip()
+                                
                             except Exception:
                                 continue  # skip unreadable or malformed XML
 
@@ -325,71 +354,86 @@ class Slide(models.Model):
         fobj.seek(0)
 
         path = os.path.dirname(os.path.abspath(__file__))
-        manifest_file = None
         html_file_name = None
+        manifest_file = None
 
         source_dir = os.path.join(os.path.split(path)[-2], "static", "media", "scorm", str(self.id))
-        
+
+        def find_case_insensitive(name, file_list):
+            return next((f for f in file_list if f.lower() == name.lower()), None)
+
+        def find_with_alt_extensions(base_name, ext, file_list):
+            alt_ext = '.html' if ext == '.htm' else '.htm'
+            alt_name = base_name + alt_ext
+            return find_case_insensitive(alt_name, file_list)
+
+        def strip_namespace(tag):
+            return tag.split('}')[-1] if '}' in tag else tag
+
         try:
             with zipfile.ZipFile(fobj, 'r') as zipObj:
                 listOfFileNames = zipObj.namelist()
-
-                # Extract all contents
                 zipObj.extractall(source_dir)
 
-                # Find imsmanifest.xml (to store for version later)
-                manifest_file_name = list(filter(lambda x: 'imsmanifest.xml' in x, listOfFileNames))
+                manifest_file_name = [x for x in listOfFileNames if x.lower().endswith("imsmanifest.xml")]
                 if manifest_file_name:
                     manifest_file = os.path.join(source_dir, manifest_file_name[0])
 
-                # Scan all XML files to find <launch> or <launch><location>
                 for name in listOfFileNames:
-                    if name.endswith(".xml"):
+                    if name.lower().endswith(".xml"):
                         try:
                             xml_path = os.path.join(source_dir, name)
                             tree = ET.parse(xml_path)
                             root = tree.getroot()
 
-                            # Check for direct <launch>
-                            launch = root.find('.//launch')
-                            if launch is not None:
-                                if launch.text and launch.text.strip():
-                                    html_file_name = launch.text.strip()
-                                    break
-                                # If it has nested <location>
-                                location = launch.find('location')
-                                if location is not None and location.text:
-                                    html_file_name = location.text.strip()
-                                    break
-                        except ET.ParseError:
-                            continue  # Skip malformed XMLs
+                            # Look for <resource> with sco
+                            for res in root.iter():
+                                if strip_namespace(res.tag) == 'resource':
+                                    scorm_type = res.attrib.get('{http://www.adlnet.org/xsd/adlcp_rootv1p2}scormtype') or res.attrib.get('scormType')
+                                    print (res.attrib)
+                                    href = res.attrib.get('href')
+                                    if scorm_type and href:
+                                        base, ext = os.path.splitext(href)
+                                        html_file_name = (
+                                            href if href in listOfFileNames else
+                                            find_case_insensitive(href, listOfFileNames) or
+                                            find_with_alt_extensions(base, ext.lower(), listOfFileNames)
+                                        )
+                                        if html_file_name:
+                                            break
+                                    
 
-                # If still not found, fallback to known HTML names
+                            # Look for <launch><location> or <launch>text
+                            if not html_file_name:
+                                launch = root.find('.//launch')
+                                if launch is not None:
+                                    if launch.text:
+                                        html_file_name = launch.text.strip()
+                                    elif launch.find('location') is not None:
+                                        html_file_name = launch.find('location').text.strip()
+                            if html_file_name:
+                                break
+                        except ET.ParseError:
+                            continue
+
+                # Fallback to known filenames
                 if not html_file_name:
-                    html_candidates = ['index.html', 'index_lms.html', 'story.html']
-                    for candidate in html_candidates:
-                        matched = list(filter(lambda x: candidate in x, listOfFileNames))
-                        if matched:
-                            html_file_name = matched[0]
+                    for candidate in ['index_lms.html', 'story.html', 'index.html']:
+                        match = next((f for f in listOfFileNames if candidate.lower() in f.lower()), None)
+                        if match:
+                            html_file_name = match
                             break
 
-                if not html_file_name:
-                    raise UserError("Could not determine the launch HTML file from SCORM package.")
-
-                self.filename = '/website_scorm_elearning/static/media/scorm/%s/%s' % (str(self.id), html_file_name)
+                if html_file_name:
+                    self.filename = f'/website_scorm_elearning/static/media/scorm/{self.id}/{html_file_name}'
+                if manifest_file:
+                    self.manifest_file = manifest_file
+                    self.scorm_version = self.extract_scorm_version(manifest_file)
 
         except OSError as e:
             _logger.warning("Filesystem is read-only, cannot create directory: %s", source_dir)
-            raise UserError("The file is read-only, so it can't be uploaded to SCORM. Please enable Scorm upload on Amazon S3 to continue.")
-        finally:
-            fobj.close()
-
-        # Extract SCORM version
-        if manifest_file:
-            self.manifest_file = manifest_file
-            self.scorm_version = self.extract_scorm_version(manifest_file)
-
-
+            raise UserError("Something went wrong")
+        
     def extract_scorm_version(self, manifest_file):
         tree = ET.parse(manifest_file)
         root = tree.getroot()
