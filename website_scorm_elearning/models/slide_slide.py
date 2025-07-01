@@ -83,14 +83,15 @@ class Slide(models.Model):
         amazon_access_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_access_key')
         amazon_secret_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_secret_key')
         bucket_name = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_bucket_name')
-        if self.is_amazon_s3:
-            if not amazon_access_key or not amazon_secret_key or not bucket_name:
-                self.scorm_data = False
-                raise UserError("Amazon S3 credentials or bucket name are not configured.")
+        if self.filename:
+            if self.is_amazon_s3:
+                if not amazon_access_key or not amazon_secret_key or not bucket_name:
+                    self.scorm_data = False
+                    raise UserError("Amazon S3 credentials or bucket name are not configured.")
+                else:
+                    self.filename = self._upload_to_s3(self.scorm_data)
             else:
-                pass
-        else:
-            pass
+                self.read_files_from_zip()
 
     @api.onchange('scorm_version')
     def onchange_scorm_version(self):
@@ -267,6 +268,9 @@ class Slide(models.Model):
                 # Upload all files to S3
                 try:
                     s3_file_url_base = f"https://{bucket_name}.s3.{bucket_region}.amazonaws.com/"
+                    index_lms_path = None
+                    index_html_path = None
+                    story_html_path = None
                     for root_dir, _, files in os.walk(extract_dir):
                         for file_name in files:
                             file_path = os.path.join(root_dir, file_name)
@@ -292,12 +296,22 @@ class Slide(models.Model):
 
                             # Fallback options if no XML match
                             elif not selected_file:
-                                if file_name == 'index_lms.html':
-                                    selected_file = encoded_s3_key
-                                elif file_name == 'index.html':
-                                    selected_file = encoded_s3_key
-                                elif file_name == 'story.html':
-                                    selected_file = encoded_s3_key
+                                file_name = file_name.lower()
+                                module_name = 'mx_elearning_pro'
+                                module_installed = self.env['ir.module.module'].sudo().search(
+                                    [('name', '=', module_name), ('state', '=', 'installed')], limit=1
+                                )
+                                if module_installed and self.is_tincan:
+                                    if file_name == 'index_lms.html':
+                                        index_lms_path = encoded_s3_key
+                                else:
+                                    if file_name == 'index.html':
+                                        index_html_path = encoded_s3_key
+                                    elif file_name == 'story.html':
+                                        story_html_path = encoded_s3_key
+
+                    if not selected_file:
+                        selected_file = index_lms_path or index_html_path or story_html_path
 
                     if selected_file:
                         story_url = s3_file_url_base + selected_file
