@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'eLearning with Scorm',
-    'version': '18.4',
+    'version': '18.5',
     'sequence': 10,
     'summary': 'Manage and publish an eLearning platform',
+    'icon': '/website_scorm_elearning/static/description/icon.svg',
     'website': 'https://www.manprax.com',
     'author': 'ManpraX Software LLP',
     'category': 'Website/eLearning',
