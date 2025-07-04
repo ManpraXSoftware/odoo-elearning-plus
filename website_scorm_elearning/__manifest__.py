@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'eLearning with Scorm',
-    'version': '17.0.1.5',
+    'version': '17.0.1.6',
     'sequence': 10,
     'summary': 'Manage and publish an eLearning platform',
     'icon': '/website_scorm_elearning/static/description/icon2.png',
