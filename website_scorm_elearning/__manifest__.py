@@ -4,7 +4,7 @@
     'version': '17.0.1.5',
     'sequence': 10,
     'summary': 'Manage and publish an eLearning platform',
-    'icon': '/website_scorm_elearning/static/description/icon.svg',
+    'icon': '/website_scorm_elearning/static/description/icon2.png',
     'website': 'https://www.manprax.com',
     'author': 'ManpraX Software LLP',
     'category': 'Website/eLearning',
