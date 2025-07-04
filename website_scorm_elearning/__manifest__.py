@@ -3,6 +3,7 @@
     'name': 'eLearning with Scorm',
     'version': '17.0.1.5',
     'sequence': 10,
+    'icon': '/website_scorm_elearning/static/description/icon3.png',
     'summary': 'Manage and publish an eLearning platform',
     'website': 'https://www.manprax.com',
     'author': 'ManpraX Software LLP',
