@@ -232,7 +232,6 @@ class Slide(models.Model):
                                 for res in root.iter():
                                     if strip_namespace(res.tag) == 'resource':
                                         scorm_type = res.attrib.get('{http://www.adlnet.org/xsd/adlcp_rootv1p2}scormtype') or res.attrib.get('scormType')
-                                        print (res.attrib)
                                         href = res.attrib.get('href')
                                         if scorm_type and href:
                                             base, ext = os.path.splitext(href)
@@ -257,8 +256,28 @@ class Slide(models.Model):
                             except Exception:
                                 continue  # skip unreadable or malformed XML
 
-                    if launch_file_from_xml:
-                        break  # stop if launch file found
+                # === Fallback selection: check for preferred launch files if XML not successful ===
+                all_files = []
+                for root_dir, _, files in os.walk(extract_dir):
+                    for file_name in files:
+                        relative_path = os.path.relpath(os.path.join(root_dir, file_name), extract_dir)
+                        all_files.append(relative_path.replace(os.sep, '/'))
+
+                # Launch file priority
+                preferred_launch_files = ['index_lms.html', 'index.html', 'story.html']
+                for fallback_name in preferred_launch_files:
+                    fallback_path = next((f for f in all_files if f.endswith(fallback_name)), None)
+                    if fallback_path:
+                        fallback_encoded = quote(f"{file_prefix}/{fallback_path}", safe='/()')
+                        if not selected_file:
+                            selected_file = fallback_encoded
+                        break
+
+                # Override fallback if launch file from XML is more specific
+                if launch_file_from_xml:
+                    matched_file = next((f for f in all_files if f.endswith(launch_file_from_xml)), None)
+                    if matched_file:
+                        selected_file = quote(f"{file_prefix}/{matched_file}", safe='/()')
 
                 # Upload all files to S3
                 try:
@@ -279,24 +298,11 @@ class Slide(models.Model):
                                     ExtraArgs={'ContentType': mime_type, 'ContentDisposition': 'inline'}
                                 )
 
-                            encoded_s3_key = quote(s3_key, safe='/()')
-
-                            # Select the correct launch file
-                            normalized_rel_path = relative_path.replace(os.sep, '/')
-                            if launch_file_from_xml and normalized_rel_path.endswith(launch_file_from_xml):
-                                selected_file = encoded_s3_key
-
-                            # Fallback options if no XML match
-                            elif not selected_file:
-                                if file_name == 'index_lms.html':
-                                    selected_file = encoded_s3_key
-                                elif file_name == 'index.html':
-                                    selected_file = encoded_s3_key
-                                elif file_name == 'story.html':
-                                    selected_file = encoded_s3_key
-
                     if selected_file:
                         story_url = s3_file_url_base + selected_file
+
+                    if not self.is_tincan and not selected_file:
+                        raise UserError(_("SCORM launch file (index_lms.html, index.html, or story.html) not found."))
 
                 except Exception as e:
                     raise ValidationError("Failed to upload files to Amazon S3: %s" % str(e))
@@ -413,11 +419,18 @@ class Slide(models.Model):
 
                 # Fallback to known filenames
                 if not html_file_name:
-                    for candidate in ['index_lms.html', 'story.html', 'index.html']:
-                        match = next((f for f in listOfFileNames if candidate.lower() in f.lower()), None)
-                        if match:
-                            html_file_name = match
-                            break
+                    if not self.is_tincan:
+                        for candidate in ['story.html', 'index.html']:
+                            match = next((f for f in listOfFileNames if candidate.lower() in f.lower()), None)
+                            if match:
+                                html_file_name = match
+                                break
+                    else:
+                        for candidate in ['index_lms.html', 'story.html', 'index.html']:
+                            match = next((f for f in listOfFileNames if candidate.lower() in f.lower()), None)
+                            if match:
+                                html_file_name = match
+                                break
 
                 if html_file_name:
                     self.filename = f'/website_scorm_elearning/static/media/scorm/{self.id}/{html_file_name}'
