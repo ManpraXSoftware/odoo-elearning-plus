@@ -15,7 +15,7 @@ class ResConfigSettings(models.TransientModel):
     amazon_secret_key = fields.Char(string='Amazon S3 Secret key',
                                     config_parameter='amazon_s3_connector.amazon_secret_key',
                                     help='Enter your Amazon S3 Secret Key here.')
-    amazon_bucket_name = fields.Char(string='Folder ID',
+    amazon_bucket_name = fields.Char(string='Amazon S3 Bucket Name',
                                      config_parameter='amazon_s3_connector.amazon_bucket_name',
                                      help='Enter the name of your Amazon S3 Bucket here.')
     is_amazon_connector = fields.Boolean(
