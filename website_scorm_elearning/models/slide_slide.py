@@ -220,6 +220,8 @@ class Slide(models.Model):
 
                 # Look for launch file in XMLs
                 launch_file_from_xml = None
+                has_tincan = None
+                is_tincan = getattr(self, 'is_tincan', None)
                 for root_dir, _, files in os.walk(extract_dir):
                     for file_name in files:
                         if file_name.lower().endswith('.xml'):
@@ -256,6 +258,12 @@ class Slide(models.Model):
                             except Exception:
                                 continue  # skip unreadable or malformed XML
 
+                # Override fallback if launch file from XML is more specific
+                # if launch_file_from_xml:
+                #     matched_file = next((f for f in all_files if f.endswith(launch_file_from_xml)), None)
+                #     if matched_file:
+                #         selected_file = quote(f"{file_prefix}/{matched_file}", safe='/()')
+
                 # === Fallback selection: check for preferred launch files if XML not successful ===
                 all_files = []
                 for root_dir, _, files in os.walk(extract_dir):
@@ -264,20 +272,35 @@ class Slide(models.Model):
                         all_files.append(relative_path.replace(os.sep, '/'))
 
                 # Launch file priority
+                for root_dir, _, files in os.walk(extract_dir):
+                    for file_name in files:
+                        print(file_name)
+                        if file_name.lower() == 'tincan.xml':
+                            has_tincan = True
                 preferred_launch_files = ['index_lms.html', 'index.html', 'story.html']
                 for fallback_name in preferred_launch_files:
                     fallback_path = next((f for f in all_files if f.endswith(fallback_name)), None)
                     if fallback_path:
                         fallback_encoded = quote(f"{file_prefix}/{fallback_path}", safe='/()')
                         if not selected_file:
-                            selected_file = fallback_encoded
-                        break
+                            if is_tincan is False or is_tincan is None:
+                                if has_tincan:
+                                    if fallback_name == 'story.html':
+                                        selected_file = fallback_encoded
+                                        break
+                                    elif fallback_name == 'index.html' and not any(f.endswith('story.html') for f in all_files):
+                                        selected_file = fallback_encoded
+                                        break
+                                elif not has_tincan:
+                                    selected_file = fallback_encoded
+                                    break
+                            elif is_tincan is True:
+                                if has_tincan:
+                                    selected_file = fallback_encoded
+                                    break
+                                elif not has_tincan:
+                                    raise UserError(_("SCORM file is marked as TinCan, but 'tincan.xml' is missing."))
 
-                # Override fallback if launch file from XML is more specific
-                if launch_file_from_xml:
-                    matched_file = next((f for f in all_files if f.endswith(launch_file_from_xml)), None)
-                    if matched_file:
-                        selected_file = quote(f"{file_prefix}/{matched_file}", safe='/()')
 
                 # Upload all files to S3
                 try:
@@ -301,8 +324,9 @@ class Slide(models.Model):
                     if selected_file:
                         story_url = s3_file_url_base + selected_file
 
-                    if not self.is_tincan and not selected_file:
-                        raise UserError(_("SCORM launch file (index_lms.html, index.html, or story.html) not found."))
+                    if not selected_file:
+                        if not is_tincan:
+                            raise UserError(_("SCORM launch file (index_lms.html, index.html, or story.html) not found."))
 
                 except Exception as e:
                     raise ValidationError("Failed to upload files to Amazon S3: %s" % str(e))
@@ -357,7 +381,7 @@ class Slide(models.Model):
         path = os.path.dirname(os.path.abspath(__file__))
         html_file_name = None
         manifest_file = None
-
+        is_tincan = getattr(self, 'is_tincan', None)
         source_dir = os.path.join(os.path.split(path)[-2], "static", "media", "scorm", str(self.id))
 
         def find_case_insensitive(name, file_list):
@@ -419,7 +443,7 @@ class Slide(models.Model):
 
                 # Fallback to known filenames
                 if not html_file_name:
-                    if not self.is_tincan:
+                    if is_tincan is False or is_tincan is None:
                         for candidate in ['story.html', 'index.html']:
                             match = next((f for f in listOfFileNames if candidate.lower() in f.lower()), None)
                             if match:
