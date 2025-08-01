@@ -217,6 +217,14 @@ class Slide(models.Model):
                         zip_ref.extractall(extract_dir)
                 except Exception as e:
                     raise UserError(_("Failed to extract SCORM zip file: %s" % str(e)))
+                
+                # === Fallback selection: check for preferred launch files if XML not successful ===
+                all_files = []
+                for root_dir, _, files in os.walk(extract_dir):
+                    for file_name in files:
+                        relative_path = os.path.relpath(os.path.join(root_dir, file_name), extract_dir)
+                        all_files.append(relative_path.replace(os.sep, '/'))
+
 
                 # Look for launch file in XMLs
                 launch_file_from_xml = None
@@ -233,12 +241,12 @@ class Slide(models.Model):
                                 # Look for <resource> with sco
                                 for res in root.iter():
                                     if strip_namespace(res.tag) == 'resource':
-                                        scorm_type = res.attrib.get('{http://www.adlnet.org/xsd/adlcp_rootv1p2}scormtype') or res.attrib.get('scormType')
+                                        scorm_type = next((v for k, v in res.attrib.items() if k.endswith('scormType')), None)
                                         href = res.attrib.get('href')
                                         if scorm_type and href:
                                             base, ext = os.path.splitext(href)
                                             launch_file_from_xml = (
-                                                href if href in files else
+                                                href if href in all_files else
                                                 find_case_insensitive(href, files) or
                                                 find_with_alt_extensions(base, ext.lower(), files)
                                             )
@@ -259,49 +267,46 @@ class Slide(models.Model):
                                 continue  # skip unreadable or malformed XML
 
                 # Override fallback if launch file from XML is more specific
-                # if launch_file_from_xml:
-                #     matched_file = next((f for f in all_files if f.endswith(launch_file_from_xml)), None)
-                #     if matched_file:
-                #         selected_file = quote(f"{file_prefix}/{matched_file}", safe='/()')
+                if launch_file_from_xml:
+                    matched_file = next((f for f in all_files if f.endswith(launch_file_from_xml)), None)
+                    if matched_file:
+                        selected_file = quote(f"{file_prefix}/{matched_file}", safe='/()')
 
-                # === Fallback selection: check for preferred launch files if XML not successful ===
-                all_files = []
-                for root_dir, _, files in os.walk(extract_dir):
-                    for file_name in files:
-                        relative_path = os.path.relpath(os.path.join(root_dir, file_name), extract_dir)
-                        all_files.append(relative_path.replace(os.sep, '/'))
-
-                # Launch file priority
-                for root_dir, _, files in os.walk(extract_dir):
-                    for file_name in files:
-                        print(file_name)
-                        if file_name.lower() == 'tincan.xml':
-                            has_tincan = True
-                preferred_launch_files = ['index_lms.html', 'index.html', 'story.html']
-                for fallback_name in preferred_launch_files:
-                    fallback_path = next((f for f in all_files if f.endswith(fallback_name)), None)
-                    if fallback_path:
-                        fallback_encoded = quote(f"{file_prefix}/{fallback_path}", safe='/()')
-                        if not selected_file:
-                            if is_tincan is False or is_tincan is None:
-                                if has_tincan:
-                                    if fallback_name == 'story.html':
+                
+                if not launch_file_from_xml:
+                    # Launch file priority
+                    for root_dir, _, files in os.walk(extract_dir):
+                        for file_name in files:
+                            print(file_name)
+                            if file_name.lower() == 'tincan.xml':
+                                has_tincan = True
+                    preferred_launch_files = ['index_lms.html', 'index.html', 'story.html']
+                    for fallback_name in preferred_launch_files:
+                        fallback_path = next((f for f in all_files if f.endswith(fallback_name)), None)
+                        if fallback_path:
+                            fallback_encoded = quote(f"{file_prefix}/{fallback_path}", safe='/()')
+                            if not selected_file:
+                                if is_tincan is False or is_tincan is None:
+                                    if has_tincan:
+                                        if fallback_name == 'story.html':
+                                            selected_file = fallback_encoded
+                                            break
+                                        elif fallback_name == 'index.html' and not any(f.endswith('story.html') for f in all_files):
+                                            selected_file = fallback_encoded
+                                            break
+                                    elif not has_tincan:
                                         selected_file = fallback_encoded
                                         break
-                                    elif fallback_name == 'index.html' and not any(f.endswith('story.html') for f in all_files):
+                                elif is_tincan is True:
+                                    if has_tincan:
                                         selected_file = fallback_encoded
                                         break
-                                elif not has_tincan:
-                                    selected_file = fallback_encoded
-                                    break
-                            elif is_tincan is True:
-                                if has_tincan:
-                                    selected_file = fallback_encoded
-                                    break
-                                elif not has_tincan:
-                                    raise UserError(_("SCORM file is marked as TinCan, but 'tincan.xml' is missing."))
+                                    elif not has_tincan:
+                                        raise UserError(_("SCORM file is marked as TinCan, but 'tincan.xml' is missing."))
 
-
+                if not selected_file: 
+                    raise UserError(_("Your SCORM package is wrongly defined. Try another package."))
+                
                 # Upload all files to S3
                 try:
                     s3_file_url_base = f"https://{bucket_name}.s3.{bucket_region}.amazonaws.com/"
@@ -414,7 +419,10 @@ class Slide(models.Model):
                             # Look for <resource> with sco
                             for res in root.iter():
                                 if strip_namespace(res.tag) == 'resource':
-                                    scorm_type = res.attrib.get('{http://www.adlnet.org/xsd/adlcp_rootv1p2}scormtype') or res.attrib.get('scormType')
+                                    scorm_type = next(
+                                        (v for k, v in res.attrib.items() if k.endswith('scormType')),
+                                        None
+                                    )
                                     print (res.attrib)
                                     href = res.attrib.get('href')
                                     if scorm_type and href:
