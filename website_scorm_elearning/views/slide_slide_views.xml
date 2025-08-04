@@ -8,9 +8,9 @@
             <field name="arch" type="xml">
                 <field name="document_binary_content" position="after">
                     <field name="is_amazon_s3" invisible="slide_category != 'scorm'"/>
-                    <field name="scorm_version" invisible="slide_category != 'scorm'" required="slide_category == 'scorm'"/>
                     <field name="scorm_data" widget="many2many_binary" invisible="slide_category != 'scorm'"/>
                     <field name="filename" invisible="slide_category != 'scorm'" string="File Path" force_save="1" readonly="slide_category == 'scorm'" required="slide_category == 'scorm'" />
+                    <field name="scorm_version" invisible="not scorm_data" required="slide_category == 'scorm'"/>
                 </field>
                 <field name="user_id" position="before">
                     <field name="scorm_completion_on_finish" invisible="slide_category != 'scorm'"/>

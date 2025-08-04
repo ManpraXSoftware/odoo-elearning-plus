@@ -199,6 +199,8 @@ class Slide(models.Model):
             file_prefix = f"{base_name}_Scorm_{channel_id}"
             story_url = None
             selected_file = None
+            has_tincan = None
+            scorm_version = None
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 zip_file_path = os.path.join(temp_dir, scorm_data.name)
@@ -228,7 +230,6 @@ class Slide(models.Model):
 
                 # Look for launch file in XMLs
                 launch_file_from_xml = None
-                has_tincan = None
                 is_tincan = getattr(self, 'is_tincan', None)
                 for root_dir, _, files in os.walk(extract_dir):
                     for file_name in files:
@@ -237,6 +238,14 @@ class Slide(models.Model):
                             try:
                                 tree = ET.parse(file_path)
                                 root = tree.getroot()
+                                if file_name.lower() == 'imsmanifest.xml':
+                                    version_element = next((el for el in root.iter() if el.tag.lower().endswith('schemaversion')), None)
+                                    if version_element is not None and version_element.text:
+                                        version_text = version_element.text.strip()
+                                        if version_text == '1.2':
+                                            scorm_version = 'scorm11'
+                                        else:
+                                            scorm_version = 'scorm2004'
 
                                 # Look for <resource> with sco
                                 for res in root.iter():
@@ -327,7 +336,10 @@ class Slide(models.Model):
                                 )
 
                     if selected_file:
-                        story_url = s3_file_url_base + selected_file
+                        story_url = f"/scorm/{selected_file}"
+
+                    if scorm_version:
+                        self.scorm_version = scorm_version
 
                     if not selected_file:
                         if not is_tincan:
