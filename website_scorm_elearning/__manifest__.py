@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'eLearning with Scorm',
-    'version': '17.0.1.7',
+    'version': '17.0.1.8',
     'sequence': 10,
     'summary': 'Manage and publish an eLearning platform',
     'website': 'https://www.manprax.com',
