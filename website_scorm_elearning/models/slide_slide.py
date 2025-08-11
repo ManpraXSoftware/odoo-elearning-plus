@@ -203,6 +203,8 @@ class Slide(models.Model):
             file_prefix = f"{base_name}_Scorm_{channel_id}"
             story_url = None
             selected_file = None
+            has_tincan = None
+            scorm_version = None
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 zip_file_path = os.path.join(temp_dir, scorm_data.name)
@@ -221,9 +223,18 @@ class Slide(models.Model):
                         zip_ref.extractall(extract_dir)
                 except Exception as e:
                     raise UserError(_("Failed to extract SCORM zip file: %s" % str(e)))
+                
+                # === Fallback selection: check for preferred launch files if XML not successful ===
+                all_files = []
+                for root_dir, _, files in os.walk(extract_dir):
+                    for file_name in files:
+                        relative_path = os.path.relpath(os.path.join(root_dir, file_name), extract_dir)
+                        all_files.append(relative_path.replace(os.sep, '/'))
+
 
                 # Look for launch file in XMLs
                 launch_file_from_xml = None
+                is_tincan = getattr(self, 'is_tincan', None)
                 for root_dir, _, files in os.walk(extract_dir):
                     for file_name in files:
                         if file_name.lower().endswith('.xml'):
@@ -231,16 +242,24 @@ class Slide(models.Model):
                             try:
                                 tree = ET.parse(file_path)
                                 root = tree.getroot()
+                                if file_name.lower() == 'imsmanifest.xml':
+                                    version_element = next((el for el in root.iter() if el.tag.lower().endswith('schemaversion')), None)
+                                    if version_element is not None and version_element.text:
+                                        version_text = version_element.text.strip()
+                                        if version_text == '1.2':
+                                            scorm_version = 'scorm11'
+                                        else:
+                                            scorm_version = 'scorm2004'
 
                                 # Look for <resource> with sco
                                 for res in root.iter():
                                     if strip_namespace(res.tag) == 'resource':
-                                        scorm_type = res.attrib.get('{http://www.adlnet.org/xsd/adlcp_rootv1p2}scormtype') or res.attrib.get('scormType')
+                                        scorm_type = next((v for k, v in res.attrib.items() if k.endswith('scormType')), None)
                                         href = res.attrib.get('href')
                                         if scorm_type and href:
                                             base, ext = os.path.splitext(href)
                                             launch_file_from_xml = (
-                                                href if href in files else
+                                                href if href in all_files else
                                                 find_case_insensitive(href, files) or
                                                 find_with_alt_extensions(base, ext.lower(), files)
                                             )
@@ -260,29 +279,47 @@ class Slide(models.Model):
                             except Exception:
                                 continue  # skip unreadable or malformed XML
 
-                # === Fallback selection: check for preferred launch files if XML not successful ===
-                all_files = []
-                for root_dir, _, files in os.walk(extract_dir):
-                    for file_name in files:
-                        relative_path = os.path.relpath(os.path.join(root_dir, file_name), extract_dir)
-                        all_files.append(relative_path.replace(os.sep, '/'))
-
-                # Launch file priority
-                preferred_launch_files = ['index_lms.html', 'index.html', 'story.html']
-                for fallback_name in preferred_launch_files:
-                    fallback_path = next((f for f in all_files if f.endswith(fallback_name)), None)
-                    if fallback_path:
-                        fallback_encoded = quote(f"{file_prefix}/{fallback_path}", safe='/()')
-                        if not selected_file:
-                            selected_file = fallback_encoded
-                        break
-
                 # Override fallback if launch file from XML is more specific
                 if launch_file_from_xml:
                     matched_file = next((f for f in all_files if f.endswith(launch_file_from_xml)), None)
                     if matched_file:
                         selected_file = quote(f"{file_prefix}/{matched_file}", safe='/()')
 
+                
+                if not launch_file_from_xml:
+                    # Launch file priority
+                    for root_dir, _, files in os.walk(extract_dir):
+                        for file_name in files:
+                            print(file_name)
+                            if file_name.lower() == 'tincan.xml':
+                                has_tincan = True
+                    preferred_launch_files = ['index_lms.html', 'index.html', 'story.html']
+                    for fallback_name in preferred_launch_files:
+                        fallback_path = next((f for f in all_files if f.endswith(fallback_name)), None)
+                        if fallback_path:
+                            fallback_encoded = quote(f"{file_prefix}/{fallback_path}", safe='/()')
+                            if not selected_file:
+                                if is_tincan is False or is_tincan is None:
+                                    if has_tincan:
+                                        if fallback_name == 'story.html':
+                                            selected_file = fallback_encoded
+                                            break
+                                        elif fallback_name == 'index.html' and not any(f.endswith('story.html') for f in all_files):
+                                            selected_file = fallback_encoded
+                                            break
+                                    elif not has_tincan:
+                                        selected_file = fallback_encoded
+                                        break
+                                elif is_tincan is True:
+                                    if has_tincan:
+                                        selected_file = fallback_encoded
+                                        break
+                                    elif not has_tincan:
+                                        raise UserError(_("SCORM file is marked as TinCan, but 'tincan.xml' is missing."))
+
+                if not selected_file: 
+                    raise UserError(_("Your SCORM package is wrongly defined. Try another package."))
+                
                 # Upload all files to S3
                 try:
                     s3_file_url_base = f"https://{bucket_name}.s3.{bucket_region}.amazonaws.com/"
@@ -303,10 +340,14 @@ class Slide(models.Model):
                                 )
 
                     if selected_file:
-                        story_url = s3_file_url_base + selected_file
+                        story_url = f"/scorm/{selected_file}"
 
-                    if not self.is_tincan and not selected_file:
-                        raise UserError(_("SCORM launch file (index_lms.html, index.html, or story.html) not found."))
+                    if scorm_version:
+                        self.scorm_version = scorm_version
+
+                    if not selected_file:
+                        if not is_tincan:
+                            raise UserError(_("SCORM launch file (index_lms.html, index.html, or story.html) not found."))
 
                 except Exception as e:
                     raise ValidationError("Failed to upload files to Amazon S3: %s" % str(e))
@@ -315,40 +356,41 @@ class Slide(models.Model):
 
         except Exception as e:
             raise ValidationError("An unexpected error occurred while processing the SCORM data: %s" % str(e))
+
     @api.depends('slide_category', 'google_drive_id', 'video_source_type', 'youtube_id')
     def _compute_embed_code(self):
-            for rec in self:
-                super(Slide, rec)._compute_embed_code()
-                try:
-                    if rec.slide_category == 'scorm' and rec.scorm_data and not rec.is_tincan:
-                        rec.embed_code = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
-                        rec.embed_code_external = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
-                    elif rec.slide_category == 'scorm' and rec.scorm_data and rec.is_tincan:
-                        user_name = self.env.user.id
-                        user_mail = self.env.user.login
-                        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
-                        end_point = f"{base_url}/slides/slide"
-                        encoded_endpoint = urllib.parse.quote(end_point, safe=":/?&=")
-                        actor_data = {
-                            "name": [user_name],
-                            "mbox": [f"mailto:{user_mail},{rec.id}"]
-                        }
-                        actor_json = json.dumps(actor_data)  # Convert to JSON string
-                        encoded_actor = urllib.parse.quote(actor_json)  # URL encode the JSON string
-                        iframe_template = (
-                            '<iframe src="{}?endpoint={}&actor={}&activity_id={}" '
-                            'allowFullScreen="true" frameborder="0"></iframe>'
-                        )
-                        rec.embed_code = Markup(iframe_template.format(
-                            rec.filename, encoded_endpoint, encoded_actor, rec.id
-                        ))
-                        rec.embed_code_external = Markup(iframe_template.format(
-                            rec.filename, encoded_endpoint, encoded_actor, rec.id
-                        ))
-                except:
-                    if rec.slide_category  == 'scorm' and rec.scorm_data:
-                        rec.embed_code = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
-                        rec.embed_code_external = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
+                for rec in self:
+                    super(Slide, rec)._compute_embed_code()
+                    try:
+                        if rec.slide_category == 'scorm' and rec.scorm_data and not rec.is_tincan:
+                            rec.embed_code = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
+                            rec.embed_code_external = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
+                        elif rec.slide_category == 'scorm' and rec.scorm_data and rec.is_tincan:
+                            user_name = self.env.user.id
+                            user_mail = self.env.user.login
+                            base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+                            end_point = f"{base_url}/slides/slide"
+                            encoded_endpoint = urllib.parse.quote(end_point, safe=":/?&=")
+                            actor_data = {
+                                "name": [user_name],
+                                "mbox": [f"mailto:{user_mail},{rec.id}"]
+                            }
+                            actor_json = json.dumps(actor_data)  # Convert to JSON string
+                            encoded_actor = urllib.parse.quote(actor_json)  # URL encode the JSON string
+                            iframe_template = (
+                                '<iframe src="{}?endpoint={}&actor={}&activity_id={}" '
+                                'allowFullScreen="true" frameborder="0"></iframe>'
+                            )
+                            rec.embed_code = Markup(iframe_template.format(
+                                rec.filename, encoded_endpoint, encoded_actor, rec.id
+                            ))
+                            rec.embed_code_external = Markup(iframe_template.format(
+                                rec.filename, encoded_endpoint, encoded_actor, rec.id
+                            ))
+                    except:
+                        if rec.slide_category  == 'scorm' and rec.scorm_data:
+                            rec.embed_code = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
+                            rec.embed_code_external = Markup('<iframe src="%s" allowFullScreen="true" frameborder="0"></iframe>') % (rec.filename)
 
     def read_files_from_zip(self):
         file = base64.decodebytes(self.scorm_data.datas)
@@ -360,7 +402,7 @@ class Slide(models.Model):
         path = os.path.dirname(os.path.abspath(__file__))
         html_file_name = None
         manifest_file = None
-
+        is_tincan = getattr(self, 'is_tincan', None)
         source_dir = os.path.join(os.path.split(path)[-2], "static", "media", "scorm", str(self.id))
 
         def find_case_insensitive(name, file_list):
@@ -393,7 +435,10 @@ class Slide(models.Model):
                             # Look for <resource> with sco
                             for res in root.iter():
                                 if strip_namespace(res.tag) == 'resource':
-                                    scorm_type = res.attrib.get('{http://www.adlnet.org/xsd/adlcp_rootv1p2}scormtype') or res.attrib.get('scormType')
+                                    scorm_type = next(
+                                        (v for k, v in res.attrib.items() if k.endswith('scormType')),
+                                        None
+                                    )
                                     print (res.attrib)
                                     href = res.attrib.get('href')
                                     if scorm_type and href:
@@ -422,7 +467,7 @@ class Slide(models.Model):
 
                 # Fallback to known filenames
                 if not html_file_name:
-                    if not self.is_tincan:
+                    if is_tincan is False or is_tincan is None:
                         for candidate in ['story.html', 'index.html']:
                             match = next((f for f in listOfFileNames if candidate.lower() in f.lower()), None)
                             if match:
@@ -444,7 +489,7 @@ class Slide(models.Model):
         except OSError as e:
             _logger.warning("Filesystem is read-only, cannot create directory: %s", source_dir)
             raise UserError("Something went wrong")
-        
+       
     def extract_scorm_version(self, manifest_file):
         tree = ET.parse(manifest_file)
         root = tree.getroot()
