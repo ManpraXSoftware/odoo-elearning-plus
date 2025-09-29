@@ -17,7 +17,7 @@ class WebsiteSlidesScorm(WebsiteSlides):
             'scorm_version': slide_dict['slide'].scorm_version
         }
 
-    @http.route('/slide/slide/set_session_info', type='json', auth="user", website=True, cors='*')
+    @http.route('/slide/slide/set_session_info', type='jsonrpc', auth="user", website=True, cors='*')
     def _set_session_info(self, slide_id, element, value):
         slide_partner_sudo = request.env['slide.slide.partner'].sudo()
         slide_id = request.env['slide.slide'].browse(slide_id)
@@ -40,7 +40,7 @@ class WebsiteSlidesScorm(WebsiteSlides):
                 'slide_partner_id': slide_partner_id.id
             })
 
-    @http.route('/slide/slide/get_session_info', type='json', auth="user", website=True, cors='*')
+    @http.route('/slide/slide/get_session_info', type='jsonrpc', auth="user", website=True, cors='*')
     def _get_session_info(self, slide_id):
         slide_partner_sudo = request.env['slide.slide.partner'].sudo()
         slide_id = request.env['slide.slide'].browse(slide_id)
