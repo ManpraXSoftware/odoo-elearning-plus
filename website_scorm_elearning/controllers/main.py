@@ -10,14 +10,14 @@ from odoo.addons.website_slides.controllers.main import WebsiteSlides
 
 class WebsiteSlidesScorm(WebsiteSlides):
 
-    @http.route('/slides/slide/get_scorm_version', type="json", auth="public", website=True, core='*')
+    @http.route('/slides/slide/get_scorm_version', type="jsonrpc", auth="public", website=True, core='*')
     def get_scorm_version(self, slide_id):
         slide_dict = self._fetch_slide(slide_id)
         return {
             'scorm_version': slide_dict['slide'].scorm_version
         }
 
-    @http.route('/slide/slide/set_session_info', type='json', auth="user", website=True, cors='*')
+    @http.route('/slide/slide/set_session_info', type='jsonrpc', auth="user", website=True, cors='*')
     def _set_session_info(self, slide_id, element, value):
         slide_partner_sudo = request.env['slide.slide.partner'].sudo()
         slide_id = request.env['slide.slide'].browse(slide_id)
@@ -40,7 +40,7 @@ class WebsiteSlidesScorm(WebsiteSlides):
                 'slide_partner_id': slide_partner_id.id
             })
 
-    @http.route('/slide/slide/get_session_info', type='json', auth="user", website=True, cors='*')
+    @http.route('/slide/slide/get_session_info', type='jsonrpc', auth="user", website=True, cors='*')
     def _get_session_info(self, slide_id):
         slide_partner_sudo = request.env['slide.slide.partner'].sudo()
         slide_id = request.env['slide.slide'].browse(slide_id)
@@ -55,7 +55,7 @@ class WebsiteSlidesScorm(WebsiteSlides):
             values[session_info.name] = session_info.value
         return values
 
-    @http.route('/slides/slide/set_completed_scorm', website=True, type="json", auth="public")
+    @http.route('/slides/slide/set_completed_scorm', website=True, type="jsonrpc", auth="public")
     def slide_set_completed_scorm(self, slide_id, completion_type):
         if request.website.is_public_user():
             return {'error': 'public_user'}
