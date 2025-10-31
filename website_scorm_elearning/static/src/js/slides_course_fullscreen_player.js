@@ -129,14 +129,14 @@ var API = publicWidget.Widget.extend({
                 element: element,
                 value: value,
             })
-            if ((['cmi.completion_status', 'cmi.core.lesson_status'].includes(element)) && (['completed', 'passed'].includes(value))) {
+            if ((['cmi.completion_status', 'cmi.success_status'].includes(element)) && (['completed', 'passed'].includes(value))) {
                 this.rpc('/slides/slide/set_completed_scorm', {
                     slide_id: this.slide.id,
                     completion_type: value,
                 }).then(data => {
                     this.slide.completed = true;
-                    var $elem = $('.fa-circle-thin[data-slide-id="'+this.slide.id+'"]');
-                    $elem.removeClass('fa-circle-thin').addClass('fa-check text-success o_wslides_slide_completed');
+                    var $elem = $('.fa-file-archive-o[data-slide-id="'+this.slide.id+'"]');
+                    $elem.removeClass('fa-file-archive-o').addClass('fa-check text-success o_wslides_slide_completed');
                     var channelCompletion = data.channel_completion;
                     var completion = Math.min(100, channelCompletion);
                     $('.progress-bar').css('width', completion + "%" );
@@ -203,23 +203,20 @@ var API_1484_11 = publicWidget.Widget.extend({
             return returnValue;
         }
         this.SetValue = function(element, value){
-            if (isNaN(value)) {
-                value = 0;
-            }
             this.values[element] = value;
             this.rpc('/slide/slide/set_session_info', {
                 slide_id: this.slide.id,
                 element: element,
                 value: value,
             })
-            if ((['cmi.completion_status', 'cmi.core.lesson_status'].includes(element)) && (['completed', 'passed'].includes(value))) {
+            if ((['cmi.completion_status', 'cmi.success_status'].includes(element)) && (['completed', 'passed'].includes(value))) {
                 this.rpc('/slides/slide/set_completed_scorm', {
                     slide_id: this.slide.id,
                     completion_type: value,
                 }).then(data => {
                     this.slide.completed = true;
-                    var $elem = $('.fa-circle-thin[data-slide-id="'+this.slide.id+'"]');
-                    $elem.removeClass('fa-circle-thin').addClass('fa-check text-success o_wslides_slide_completed');
+                    var $elem = $('.fa-file-archive-o[data-slide-id="'+this.slide.id+'"]');
+                    $elem.removeClass('fa-file-archive-o').addClass('fa-check text-success o_wslides_slide_completed');
                     var channelCompletion = data.channel_completion;
                     var completion = Math.min(100, channelCompletion);
                     $('.progress-bar').css('width', completion + "%" );

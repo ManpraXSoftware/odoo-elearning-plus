@@ -104,10 +104,12 @@ class Slide(models.Model):
     def _compute_slides_statistics(self):
         super(Slide, self)._compute_slides_statistics()
 
-    @api.depends('slide_category', 'question_ids', 'channel_id.is_member')
-    @api.depends_context('uid')
     def _compute_mark_complete_actions(self):
-        super(Slide, self)._compute_mark_complete_actions()
+        """Extend logic so SCORM slides cannot be manually marked complete/uncomplete."""
+        slides_scorm = self.filtered(lambda s: s.slide_category == 'scorm' and s.scorm_completion_on_finish)
+        slides_scorm.can_self_mark_completed = False
+        slides_scorm.can_self_mark_uncompleted = False
+        super(Slide, self - slides_scorm)._compute_mark_complete_actions()
 
     @api.depends('slide_category', 'source_type', 'video_source_type')
     def _compute_slide_type(self):

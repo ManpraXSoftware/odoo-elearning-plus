@@ -63,8 +63,8 @@ class WebsiteSlidesScorm(WebsiteSlides):
         slide = fetch_res['slide']
         if fetch_res.get('error'):
             return fetch_res
-        if slide.website_published and slide.channel_id.is_member:
-            slide.action_mark_completed()
+        if slide.website_published and slide.channel_id.is_member and not slide.question_ids:
+            slide._action_mark_completed()
         self._set_karma_points(fetch_res['slide'], completion_type)
         return {
             'channel_completion': fetch_res['slide'].channel_id.completion
@@ -80,10 +80,10 @@ class WebsiteSlidesScorm(WebsiteSlides):
             user_id = user_sudo.search([('partner_id', '=', slide_partner_id.partner_id.id)], limit=1)
             if completion_type == 'passed':
                 slide_partner_id.lms_scorm_karma = slide_id.scorm_passed_xp
-                user_id.karma = slide_id.scorm_passed_xp
+                user_id.karma += slide_id.scorm_passed_xp
             if completion_type == 'completed':
                 slide_partner_id.lms_scorm_karma = slide_id.scorm_completed_xp
-                user_id.karma = slide_id.scorm_passed_xp
+                user_id.karma += slide_id.scorm_completed_xp
 
 
     @http.route(['/scorm/<path:file_path>'], type='http', auth='public', website=True)
