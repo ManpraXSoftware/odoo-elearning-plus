@@ -173,15 +173,16 @@ publicWidget.registry.Scorm = publicWidget.Widget.extend({
         $('#scorm_content').append($('#iframe_src').attr('value'));
         $('#iframe_src').remove();
         if (!(isNaN(currentSlide))) {
+
+            // Create API immediately
+            window.API = new API();
+            window.API_1484_11 = new API_1484_11();
+
+            // Then fetch version (optional)
             this.rpc("/slides/slide/get_scorm_version",{
                 'slide_id': currentSlide
             }).then(function (data){
-                if (data.scorm_version === 'scorm11') {
-                    window.API = new API(currentSlide, 'scorm');
-                }
-                if (data.scorm_version === 'scorm2004') {
-                    window.API_1484_11 = new API_1484_11(currentSlide, 'scorm');
-                }
+                console.log("SCORM version:", data.scorm_version);
             });
         }
     },
