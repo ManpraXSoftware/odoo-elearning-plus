@@ -54,14 +54,33 @@ Fullscreen.include({
      * @override
      */
 
-    _renderSlide: function (){
-        var def = this._super.apply(this, arguments);
-        var $content = this.$('.o_wslides_fs_content');
-        const slide = this._slideValue;
-        if (slide.category === "scorm"){
-            $content.empty().append(renderToElement('website.slides.fullscreen.content.scorm', {slide: slide}));
+   _renderSlide: function (){
+    const slide = this._slideValue;
+    if (slide.category === "scorm") {
+        if (!window.API) {
+            window.API = new API();
         }
-        return Promise.all([def]);
+        if (!window.API_1484_11) {
+            window.API_1484_11 = new API_1484_11();
+        }
+        if (window.parent) {
+            window.parent.API = window.API;
+            window.parent.API_1484_11 = window.API_1484_11;
+        }
+
+        if (window.top) {
+            window.top.API = window.API;
+            window.top.API_1484_11 = window.API_1484_11;
+        }
+    }
+    var def = this._super.apply(this, arguments);
+    var $content = this.$('.o_wslides_fs_content');
+    if (slide.category === "scorm"){
+        $content.empty().append(
+            renderToElement('website.slides.fullscreen.content.scorm', {slide: slide})
+        );
+    }
+    return Promise.all([def]);
     },
 
     _onChangeSlide: function () {
@@ -123,6 +142,9 @@ var API = publicWidget.Widget.extend({
             return "true";
         }
         this.LMSSetValue = function(element, value){
+            if (value === undefined || value === null){
+                value = "";
+            }
             this.values[element] = value;
             this.rpc('/slide/slide/set_session_info', {
                 slide_id: this.slide.id,
@@ -146,7 +168,11 @@ var API = publicWidget.Widget.extend({
             return "true";
         }
         this.LMSGetValue = function(element) {
-            return this.values[element];
+            var value = this.values[element];
+            if (value === undefined || value === null) {
+                value = "";
+            }
+            return value;
         }
         this.LMSGetLastError = function() {
             return 0;
