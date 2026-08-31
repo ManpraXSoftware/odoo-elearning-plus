@@ -10,7 +10,7 @@ from odoo.addons.website_slides.controllers.main import WebsiteSlides
 
 class WebsiteSlidesScorm(WebsiteSlides):
 
-    @http.route('/slides/slide/get_scorm_version', type="jsonrpc", auth="public", website=True, core='*')
+    @http.route('/slides/slide/get_scorm_version', type="jsonrpc", auth="public", website=True, cors='*')
     def get_scorm_version(self, slide_id):
         slide_dict = self._fetch_slide(slide_id)
         return {

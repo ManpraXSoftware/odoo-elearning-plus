@@ -1,282 +1,1030 @@
 /** @odoo-module **/
 
-import Fullscreen from "@website_slides/js/slides_course_fullscreen_player";
-import { renderToElement } from "@web/core/utils/render";
-import publicWidget from '@web/legacy/js/public/public_widget';
-import { rpc } from "@web/core/network/rpc";
+import { Interaction } from "@web/public/interaction";
+import { registry } from "@web/core/registry";
 
 
-var findSlide = function (slideList, matcher) {
-    return slideList.find((slide) => {
-        return Object.keys(matcher).every((key) => matcher[key] === slide[key]);
-    });
-};
+export class WebsiteSlidesScormFullscreen extends Interaction {
 
-Fullscreen.include({
+    static selector = ".o_wslides_fs_main";
 
-    init: function (parent, slides, defaultSlideId, channelData){
-        var result = this._super.apply(this, arguments);
-        this.rpc = rpc;
-        return result
-    },
 
-    _preprocessSlideData: function (slidesDataList) {
-        var res = this._super.apply(this, arguments);
+    setup() {
+        console.log(
+            "========== SCORM FULLSCREEN INTERACTION =========="
+        );
 
-        slidesDataList.forEach(function (slideData, index) {
-            if (slideData.category === 'scorm') {
-                slideData.embedUrl = $(slideData.embedCode).attr('src');
-                slideData.hasQuestion = !!slideData.hasQuestion;
-                try {
-                    if (!(slideData.isTimer) && !(slideData.hasQuestion) && !(slideData.is_tincan) && (slideData.scormOnFinish != 'True')) {
-                        slideData._autoSetDone = true;
-                    } else if (slideData.scormOnFinish == 'True') {
-                        slideData._autoSetDone = false;
-                    }
-                }
-                catch {
-                    if (!(slideData.hasQuestion) && (slideData.scormOnFinish != 'True')) {
-                        slideData._autoSetDone = true;
-                    } else if (slideData.scormOnFinish == 'True') {
-                        slideData._autoSetDone = false;
-                    }
-                }
-            }
-        });
-        return res;
-    },
+        this.slidesService = this.services.website_slides;
+
+        this.scormContainer = null;
+        this.scormIframe = null;
+
+        this.currentSlideId = null;
+
+        this.renderTimer = null;
+        this.destroyed = false;
+
+        this._mutationObserver = null;
+        this._resizeObserver = null;
+        this._resizeHandler = null;
+    }
+
+
+    start() {
+        console.log(
+            "========== SCORM FULLSCREEN START =========="
+        );
+
+        console.log(
+            "Odoo fullscreen element:",
+            this.el
+        );
+
+        console.log(
+            "Slides service:",
+            this.slidesService
+        );
+
+
+        /*
+         * IMPORTANT:
+         *
+         * We observe Odoo's existing fullscreen content area.
+         *
+         * Odoo changes the content when the user selects
+         * another slide.
+         *
+         * We don't create our own fullscreen.
+         */
+        this.startContentObserver();
+
+
+        /*
+         * Initial render.
+         */
+        this.renderTimer = setTimeout(() => {
+
+            this.renderScorm();
+
+        }, 150);
+
+
+        return this;
+    }
+
 
     /**
-     * Extend the _renderSlide method so that slides of type "scorm"
-     * are also taken into account and rendered correctly
-     *
-     * @private
-     * @override
+     * ============================================================
+     * FIND ODOO CONTENT
+     * ============================================================
      */
+    getContentContainer() {
 
-   _renderSlide: function (){
-    const slide = this._slideValue;
-    if (slide.category === "scorm") {
-        if (!window.API) {
-            window.API = new API();
-        }
-        if (!window.API_1484_11) {
-            window.API_1484_11 = new API_1484_11();
-        }
-        if (window.parent) {
-            window.parent.API = window.API;
-            window.parent.API_1484_11 = window.API_1484_11;
-        }
-
-        if (window.top) {
-            window.top.API = window.API;
-            window.top.API_1484_11 = window.API_1484_11;
-        }
-    }
-    var def = this._super.apply(this, arguments);
-    var $content = this.$('.o_wslides_fs_content');
-    if (slide.category === "scorm"){
-        $content.empty().append(
-            renderToElement('website.slides.fullscreen.content.scorm', {slide: slide})
+        return (
+            this.el.querySelector(
+                ".o_wslides_fs_content"
+            )
+            ||
+            document.querySelector(
+                ".o_wslides_fs_main .o_wslides_fs_content"
+            )
         );
     }
-    return Promise.all([def]);
-    },
 
-    _onChangeSlide: function () {
-        var res = this._super.apply(this, arguments);
-        var currentSlide = parseInt(this.$('.o_wslides_fs_sidebar_list_item.active').data('id'));
-        const slide = this._slideValue;
-        if (!slide.is_tincan && slide.category == 'scorm'){
-            this.rpc("/slides/slide/get_scorm_version", {'slide_id': currentSlide
-            }).then(function (data){
-                if (slide.completed == undefined) {
-                    slide.completed = false;
-                }
-                if (data.scorm_version === 'scorm11') {
-                    window.API = new API();
-                }
-                if (data.scorm_version === 'scorm2004') {
-                    window.API_1484_11 = new API_1484_11();
-                }
-            });
-            return res;
-        }
-    },
-});
 
-var API = publicWidget.Widget.extend({
-    init: function () {
-        var result = this._super.apply(this, arguments);
-        this.rpc = rpc;
-        var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
-        var cur_slide = $('.o_wslides_fs_sidebar_list_item.active');
-        try {
-            if (!cur_slide.data().isSequential){
-                var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
-            }
-            else {
-                var $slides = $('.o_wslides_fs_sidebar_list_item');
-            }
-        }
-        catch {
-            var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
-        }
-        var slideList = [];
-        $slides.each(function () {
-            var slideData = $(this).data();
-            slideList.push(slideData);
-        });
-        var slide = findSlide(slideList, {
-            id: slideId,
-        });
-        this.slide = slide;
-        this.values = {};
-        this.rpc('/slide/slide/get_session_info', {
-            slide_id: this.slide.id,
-        }).then(data => {
-            this.values = data;
-        })
+    /**
+     * ============================================================
+     * WATCH ODOO SLIDE CONTENT
+     * ============================================================
+     *
+     * This is the important part.
+     *
+     * Odoo itself changes the DOM when the selected slide changes.
+     *
+     * We watch that existing container instead of guessing
+     * which EventBus event Odoo is using.
+     */
+    startContentObserver() {
 
-        this.LMSInitialize = function(){
-            return "true";
+        const content =
+            this.getContentContainer();
+
+
+        if (!content) {
+
+            console.warn(
+                "SCORM: fullscreen content not available yet"
+            );
+
+
+            setTimeout(() => {
+
+                if (!this.destroyed) {
+
+                    this.startContentObserver();
+
+                }
+
+            }, 100);
+
+            return;
         }
-        this.LMSSetValue = function(element, value){
-            if (value === undefined || value === null){
-                value = "";
+
+
+        console.log(
+            "SCORM: starting Odoo content MutationObserver"
+        );
+
+
+        this._mutationObserver =
+            new MutationObserver(
+                (mutations) => {
+
+                    if (this.destroyed) {
+                        return;
+                    }
+
+
+                    /*
+                     * Ignore our own iframe mutations.
+                     */
+                    let externalChange = false;
+
+
+                    for (
+                        const mutation of mutations
+                    ) {
+
+                        if (
+                            mutation.type !==
+                            "childList"
+                        ) {
+                            continue;
+                        }
+
+
+                        const target =
+                            mutation.target;
+
+
+                        /*
+                         * If the mutation belongs to our
+                         * SCORM container, ignore it.
+                         */
+                        if (
+                            this.scormContainer &&
+                            (
+                                target ===
+                                this.scormContainer
+                                ||
+                                this.scormContainer.contains(
+                                    target
+                                )
+                            )
+                        ) {
+
+                            continue;
+                        }
+
+
+                        externalChange = true;
+
+                        break;
+                    }
+
+
+                    if (externalChange) {
+
+                        console.log(
+                            "SCORM: Odoo fullscreen content changed"
+                        );
+
+
+                        this.scheduleRender();
+                    }
+                }
+            );
+
+
+        this._mutationObserver.observe(
+            content,
+            {
+                childList: true,
+                subtree: true,
             }
-            this.values[element] = value;
-            this.rpc('/slide/slide/set_session_info', {
-                slide_id: this.slide.id,
-                element: element,
-                value: value,
-            })
-            if ((['cmi.completion_status', 'cmi.core.lesson_status'].includes(element)) && (['completed', 'passed'].includes(value))) {
-                this.rpc('/slides/slide/set_completed_scorm', {
-                    slide_id: this.slide.id,
-                    completion_type: value,
-                }).then(data => {
-                    this.slide.completed = true;
-                    var $elem = $('.fa-circle-thin[data-slide-id="'+this.slide.id+'"]');
-                    $elem.removeClass('fa-circle-thin').addClass('fa-check text-success o_wslides_slide_completed');
-                    var channelCompletion = data.channel_completion;
-                    var completion = Math.min(100, channelCompletion);
-                    $('.progress-bar').css('width', completion + "%" );
-                    $('.o_wslides_progress_percentage').text(completion);
-                });
+        );
+    }
+
+
+    /**
+     * ============================================================
+     * SCHEDULE RENDER
+     * ============================================================
+     */
+    scheduleRender() {
+
+        clearTimeout(
+            this.renderTimer
+        );
+
+
+        this.renderTimer =
+            setTimeout(() => {
+
+                if (!this.destroyed) {
+
+                    this.renderScorm();
+
+                }
+
+            }, 80);
+    }
+
+
+    /**
+     * ============================================================
+     * RENDER SCORM
+     * ============================================================
+     */
+    renderScorm() {
+
+        if (this.destroyed) {
+            return;
+        }
+
+
+        console.log(
+            "========== SCORM RENDER =========="
+        );
+
+
+        const slide =
+            this.slidesService?.data?.slide;
+
+
+        console.log(
+            "Current slide:",
+            slide
+        );
+
+
+        if (!slide) {
+
+            console.warn(
+                "SCORM: no current slide"
+            );
+
+            this.removeScorm();
+
+            return;
+        }
+
+
+        /*
+         * Only handle SCORM slides.
+         */
+        if (
+            slide.category !== "scorm"
+        ) {
+
+            console.log(
+                "SCORM: current slide is not SCORM"
+            );
+
+
+            this.removeScorm();
+
+            return;
+        }
+
+
+        /*
+         * Find SCORM URL.
+         */
+        const scormUrl =
+            this.getScormUrl(slide);
+
+
+        console.log(
+            "SCORM URL:",
+            scormUrl
+        );
+
+
+        if (!scormUrl) {
+
+            console.error(
+                "SCORM: URL not found"
+            );
+
+            this.removeScorm();
+
+            return;
+        }
+
+
+        /*
+         * If this exact slide is already loaded,
+         * don't reload the Storyline application.
+         */
+        if (
+            this.currentSlideId === slide.id &&
+            this.scormIframe &&
+            this.scormIframe.isConnected
+        ) {
+
+            console.log(
+                "SCORM: current slide already loaded"
+            );
+
+
+            this.updateScormSize();
+
+            return;
+        }
+
+
+        /*
+         * Remove previous SCORM.
+         */
+        this.removeScorm();
+
+
+        /*
+         * Find Odoo's content area.
+         */
+        const content =
+            this.getContentContainer();
+
+
+        if (!content) {
+
+            console.warn(
+                "SCORM: Odoo content container not found"
+            );
+
+
+            this.scheduleRender();
+
+            return;
+        }
+
+
+        console.log(
+            "SCORM content container:",
+            content
+        );
+
+
+        /*
+         * ========================================================
+         * SCORM CONTAINER
+         * ========================================================
+         */
+        const container =
+            document.createElement(
+                "div"
+            );
+
+
+        container.className =
+            "o_wslides_fs_scorm_custom";
+
+
+        container.dataset.slideId =
+            String(slide.id);
+
+
+        /*
+         * Fill Odoo's content area.
+         */
+        Object.assign(
+            container.style,
+            {
+                width: "100%",
+                height: "100%",
+                minWidth: "0",
+                minHeight: "0",
+                display: "flex",
+                flex: "1 1 auto",
+                position: "relative",
+                overflow: "hidden",
+            }
+        );
+
+
+        /*
+         * ========================================================
+         * IFRAME
+         * ========================================================
+         */
+        const iframe =
+            document.createElement(
+                "iframe"
+            );
+
+
+        iframe.className =
+            "o_wslides_iframe_viewer";
+
+
+        iframe.src =
+            this.makeAbsoluteUrl(
+                scormUrl
+            );
+
+
+        iframe.setAttribute(
+            "frameborder",
+            "0"
+        );
+
+
+        iframe.setAttribute(
+            "title",
+            "SCORM Content"
+        );
+
+
+        iframe.setAttribute(
+            "allow",
+            "autoplay; fullscreen; clipboard-read; clipboard-write"
+        );
+
+
+        iframe.setAttribute(
+            "allowfullscreen",
+            ""
+        );
+
+
+        Object.assign(
+            iframe.style,
+            {
+                width: "100%",
+                height: "100%",
+                minWidth: "0",
+                minHeight: "0",
+                border: "0",
+                display: "block",
+            }
+        );
+
+
+        /*
+         * Add iframe.
+         */
+        container.appendChild(
+            iframe
+        );
+
+
+        /*
+         * Add to Odoo fullscreen content.
+         */
+        content.appendChild(
+            container
+        );
+
+
+        /*
+         * Save references.
+         */
+        this.scormContainer =
+            container;
+
+
+        this.scormIframe =
+            iframe;
+
+
+        this.currentSlideId =
+            slide.id;
+
+
+        console.log(
+            "========== SCORM INSERTED INTO ODOO CONTENT =========="
+        );
+
+
+        console.log(
+            "Slide ID:",
+            slide.id
+        );
+
+
+        console.log(
+            "SCORM container:",
+            container
+        );
+
+
+        console.log(
+            "SCORM iframe:",
+            iframe
+        );
+
+
+        console.log(
+            "Iframe connected:",
+            iframe.isConnected
+        );
+
+
+        console.log(
+            "Odoo content rect:",
+            content.getBoundingClientRect()
+        );
+
+
+        console.log(
+            "SCORM iframe rect:",
+            iframe.getBoundingClientRect()
+        );
+
+
+        /*
+         * ========================================================
+         * IFRAME LOAD
+         * ========================================================
+         */
+        iframe.addEventListener(
+            "load",
+            () => {
+
+                if (this.destroyed) {
+                    return;
+                }
+
+
+                console.log(
+                    "========== SCORM IFRAME LOADED =========="
+                );
+
+
+                console.log(
+                    "SCORM URL:",
+                    iframe.src
+                );
+
+
+                console.log(
+                    "Iframe connected:",
+                    iframe.isConnected
+                );
+
+
+                this.updateScormSize();
+            }
+        );
+
+
+        /*
+         * ========================================================
+         * RESIZE OBSERVER
+         * ========================================================
+         */
+        if (
+            typeof ResizeObserver !==
+            "undefined"
+        ) {
+
+            this._resizeObserver =
+                new ResizeObserver(
+                    () => {
+
+                        if (
+                            !this.destroyed
+                        ) {
+
+                            this.updateScormSize();
+                        }
+                    }
+                );
+
+
+            this._resizeObserver.observe(
+                content
+            );
+        }
+
+
+        /*
+         * Browser resize.
+         */
+        this._resizeHandler =
+            () => {
+
+                this.updateScormSize();
             };
-            return "true";
-        }
-        this.LMSGetValue = function(element) {
-            var value = this.values[element];
-            if (value === undefined || value === null) {
-                value = "";
-            }
-            return value;
-        }
-        this.LMSGetLastError = function() {
-            return 0;
-        }
-        this.LMSGetErrorString = function(errorCode) {
-            return "error string";
-        }
-        this.LMSGetDiagnostic = function(errorCode) {
-            return "diagnostic string";
-        }
-        this.LMSCommit = function() {
-            this.LMSGetValue('');
-            return "true";
-        }
-        this.LMSFinish = function() {
-            return "true";
-        }
-        return result;
-    },
-});
 
-var API_1484_11 = publicWidget.Widget.extend({
-    init: function () {
-        var result = this._super.apply(this, arguments);
-        this.rpc = rpc;
-        var slideId = parseInt($('.o_wslides_fs_sidebar_list_item.active').data('id'));
-        var cur_slide = $('.o_wslides_fs_sidebar_list_item.active');
+
+        window.addEventListener(
+            "resize",
+            this._resizeHandler
+        );
+
+
+        /*
+         * Final check.
+         */
+        setTimeout(() => {
+
+            if (
+                this.destroyed
+            ) {
+                return;
+            }
+
+
+            console.log(
+                "========== SCORM 1 SECOND CHECK =========="
+            );
+
+
+            console.log(
+                "Current slide ID:",
+                this.currentSlideId
+            );
+
+
+            console.log(
+                "Container connected:",
+                container.isConnected
+            );
+
+
+            console.log(
+                "Iframe connected:",
+                iframe.isConnected
+            );
+
+
+            console.log(
+                "Content connected:",
+                content.isConnected
+            );
+
+
+            console.log(
+                "Content rect:",
+                content.getBoundingClientRect()
+            );
+
+
+            console.log(
+                "SCORM rect:",
+                iframe.getBoundingClientRect()
+            );
+
+
+        }, 1000);
+    }
+
+
+    /**
+     * ============================================================
+     * UPDATE SIZE
+     * ============================================================
+     */
+    updateScormSize() {
+
+        if (
+            this.destroyed ||
+            !this.scormContainer ||
+            !this.scormIframe
+        ) {
+            return;
+        }
+
+
+        if (
+            !this.scormContainer.isConnected ||
+            !this.scormIframe.isConnected
+        ) {
+            return;
+        }
+
+
+        const content =
+            this.getContentContainer();
+
+
+        if (!content) {
+            return;
+        }
+
+
+        /*
+         * Odoo owns the fullscreen dimensions.
+         *
+         * We only fill the content area.
+         */
+        content.style.minWidth =
+            "0";
+
+        content.style.minHeight =
+            "0";
+
+
+        this.scormContainer.style.width =
+            "100%";
+
+        this.scormContainer.style.height =
+            "100%";
+
+
+        this.scormIframe.style.width =
+            "100%";
+
+        this.scormIframe.style.height =
+            "100%";
+
+
+        /*
+         * Do NOT use:
+         *
+         * position: fixed
+         * top: 0
+         * left: 0
+         * width: 100vw
+         * height: 100vh
+         *
+         * because that bypasses Odoo fullscreen.
+         */
+    }
+
+
+    /**
+     * ============================================================
+     * REMOVE SCORM
+     * ============================================================
+     */
+    removeScorm() {
+
+        if (
+            this._resizeObserver
+        ) {
+
+            this._resizeObserver.disconnect();
+
+            this._resizeObserver =
+                null;
+        }
+
+
+        if (
+            this._resizeHandler
+        ) {
+
+            window.removeEventListener(
+                "resize",
+                this._resizeHandler
+            );
+
+            this._resizeHandler =
+                null;
+        }
+
+
+        if (
+            this.scormContainer &&
+            this.scormContainer.isConnected
+        ) {
+
+            this.scormContainer.remove();
+        }
+
+
+        this.scormContainer =
+            null;
+
+
+        this.scormIframe =
+            null;
+
+
+        this.currentSlideId =
+            null;
+    }
+
+
+    /**
+     * ============================================================
+     * FIND SCORM URL
+     * ============================================================
+     */
+    getScormUrl(slide) {
+
+        console.log(
+            "========== FIND SCORM URL =========="
+        );
+
+
+        console.log(
+            "Slide:",
+            slide
+        );
+
+
+        /*
+         * Direct URL.
+         */
+        if (slide.embedUrl) {
+            return slide.embedUrl;
+        }
+
+
+        if (slide.embed_url) {
+            return slide.embed_url;
+        }
+
+
+        if (slide.url) {
+            return slide.url;
+        }
+
+
+        /*
+         * Embed code.
+         */
+        const embedCode =
+            slide.embedCode ||
+            slide.embed_code ||
+            slide.embedHtml ||
+            slide.embed_html;
+
+
+        if (!embedCode) {
+
+            return null;
+        }
+
+
+        console.log(
+            "SCORM embed code:",
+            embedCode
+        );
+
+
         try {
-            if (!cur_slide.data().isSequential){
-                var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
-            }
-            else {
-                var $slides = $('.o_wslides_fs_sidebar_list_item');
-            }
-        }
-        catch {
-            var $slides = $('.o_wslides_fs_sidebar_list_item[data-can-access="True"]');
-        }
-        var slideList = [];
-        $slides.each(function () {
-            var slideData = $(this).data();
-            slideList.push(slideData);
-        });
-        this.slide = findSlide(slideList, {id: slideId});
-        this.values = {};
-        this.rpc('/slide/slide/get_session_info', {
-            slide_id: this.slide.id,
-        }).then(data => {
-            this.values = data;
-        })
 
-        this.Initialize = function(){
-            var returnValue = true;
-            return returnValue;
-        }
-        this.SetValue = function(element, value){
-            if (isNaN(value)) {
-                value = 0;
-            }
-            this.values[element] = value;
-            this.rpc('/slide/slide/set_session_info', {
-                slide_id: this.slide.id,
-                element: element,
-                value: value,
-            })
-            if ((['cmi.completion_status', 'cmi.core.lesson_status'].includes(element)) && (['completed', 'passed'].includes(value))) {
-                this.rpc('/slides/slide/set_completed_scorm', {
-                    slide_id: this.slide.id,
-                    completion_type: value,
-                }).then(data => {
-                    this.slide.completed = true;
-                    var $elem = $('.fa-circle-thin[data-slide-id="'+this.slide.id+'"]');
-                    $elem.removeClass('fa-circle-thin').addClass('fa-check text-success o_wslides_slide_completed');
-                    var channelCompletion = data.channel_completion;
-                    var completion = Math.min(100, channelCompletion);
-                    $('.progress-bar').css('width', completion + "%" );
-                    $('.o_wslides_progress_percentage').text(completion);
-                });
+            const parser =
+                new DOMParser();
+
+
+            const doc =
+                parser.parseFromString(
+                    String(embedCode),
+                    "text/html"
+                );
+
+
+            const iframe =
+                doc.querySelector(
+                    "iframe"
+                );
+
+
+            if (!iframe) {
+
+                return null;
             }
 
-            return "true";
+
+            const src =
+                iframe.getAttribute(
+                    "src"
+                );
+
+
+            console.log(
+                "SCORM URL found:",
+                src
+            );
+
+
+            return src;
+
+        } catch (error) {
+
+            console.error(
+                "SCORM embed parse error:",
+                error
+            );
+
+
+            return null;
         }
-        this.GetValue = function(element) {
-            var value = this.values[element];
-            if (value == undefined) {
-                value = '';
-            }
-            return value;
+    }
+
+
+    /**
+     * ============================================================
+     * ABSOLUTE URL
+     * ============================================================
+     */
+    makeAbsoluteUrl(url) {
+
+        if (!url) {
+            return url;
         }
-        this.GetLastError = function() {
-            return 0;
+
+
+        if (
+            url.startsWith(
+                "http://"
+            ) ||
+            url.startsWith(
+                "https://"
+            ) ||
+            url.startsWith(
+                "//"
+            )
+        ) {
+
+            return url;
         }
-        this.GetErrorString = function(errorCode) {
-            return "error string";
+
+
+        if (
+            url.startsWith("/")
+        ) {
+
+            return (
+                window.location.origin +
+                url
+            );
         }
-        this.GetDiagnostic = function(errorCode) {
-            return "diagnostic string";
+
+
+        return new URL(
+            url,
+            window.location.href
+        ).href;
+    }
+
+
+    /**
+     * ============================================================
+     * DESTROY
+     * ============================================================
+     */
+    destroy() {
+
+        console.log(
+            "========== SCORM FULLSCREEN DESTROY =========="
+        );
+
+
+        this.destroyed =
+            true;
+
+
+        clearTimeout(
+            this.renderTimer
+        );
+
+
+        if (
+            this._mutationObserver
+        ) {
+
+            this._mutationObserver.disconnect();
+
+            this._mutationObserver =
+                null;
         }
-        this.Commit = function() {
-            return true;
+
+
+        this.removeScorm();
+
+
+        /*
+         * IMPORTANT:
+         *
+         * Never do:
+         *
+         * this.isDestroyed = true;
+         *
+         * Interaction.isDestroyed is read-only.
+         */
+        if (
+            typeof super.destroy ===
+            "function"
+        ) {
+
+            super.destroy();
         }
-        this.Terminate = function() {
-            return "true";
-        }
-        return result;
-    },
-});
+    }
+}
+
+
+registry
+    .category(
+        "public.interactions"
+    )
+    .add(
+        "website_scorm_elearning.scorm_fullscreen",
+        WebsiteSlidesScormFullscreen
+    );

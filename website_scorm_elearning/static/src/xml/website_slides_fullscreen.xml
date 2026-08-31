@@ -1,8 +1,21 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<templates id="template" xml:space="preserve">
+<?xml version="1.0" encoding="UTF-8"?>
+
+<templates xml:space="preserve">
+
     <t t-name="website.slides.fullscreen.content.scorm">
-        <div class="player ratio ratio-16x9 embed-responsive-item h-100">
-            <iframe t-att-src="slide.embedUrl" class="o_wslides_iframe_viewer" allow="autoplay; fullscreen"></iframe>
+
+        <div
+            class="o_wslides_fs_scorm w-100 h-100"
+            t-att-data-slide-id="slide.id"
+        >
+            <iframe
+                class="o_wslides_iframe_viewer w-100 h-100 border-0"
+                frameborder="0"
+                allow="autoplay; fullscreen"
+                allowfullscreen="allowfullscreen">
+            </iframe>
         </div>
+
     </t>
+
 </templates>

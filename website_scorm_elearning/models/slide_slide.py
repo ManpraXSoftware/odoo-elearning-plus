@@ -8,6 +8,7 @@ import tempfile
 import shutil
 import urllib.parse
 import boto3
+import io
 from io import BytesIO
 import logging
 _logger = logging.getLogger(__name__)
@@ -75,9 +76,9 @@ class Slide(models.Model):
 
     @api.onchange('is_amazon_s3')
     def _onchange_is_amazon_s3(self):
-        amazon_access_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_access_key')
-        amazon_secret_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_secret_key')
-        bucket_name = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_bucket_name')
+        amazon_access_key = self.env['ir.config_parameter'].sudo().get_str('amazon_s3_connector.amazon_access_key')
+        amazon_secret_key = self.env['ir.config_parameter'].sudo().get_str('amazon_s3_connector.amazon_secret_key')
+        bucket_name = self.env['ir.config_parameter'].sudo().get_str('amazon_s3_connector.amazon_bucket_name')
         if self.is_amazon_s3:
             if not amazon_access_key or not amazon_secret_key or not bucket_name:
                 self.scorm_data = False
@@ -175,15 +176,26 @@ class Slide(models.Model):
 
     def _upload_to_s3(self, scorm_data):
 
-        amazon_access_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_access_key')
-        amazon_secret_key = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_secret_key')
-        bucket_name = self.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_bucket_name')
+        amazon_access_key = self.env['ir.config_parameter'].sudo().get_str(
+            'amazon_s3_connector.amazon_access_key'
+        )
+        amazon_secret_key = self.env['ir.config_parameter'].sudo().get_str(
+            'amazon_s3_connector.amazon_secret_key'
+        )
+        bucket_name = self.env['ir.config_parameter'].sudo().get_str(
+            'amazon_s3_connector.amazon_bucket_name'
+        )
 
         if not amazon_access_key or not amazon_secret_key or not bucket_name:
-            raise UserError("Amazon S3 credentials or bucket name are not configured.")
+            raise UserError(
+                "Amazon S3 credentials or bucket name are not configured."
+            )
 
         def find_case_insensitive(name, file_list):
-            return next((f for f in file_list if f.lower() == name.lower()), None)
+            return next(
+                (f for f in file_list if f.lower() == name.lower()),
+                None
+            )
 
         def find_with_alt_extensions(base, ext, file_list):
             alt_ext = '.html' if ext == '.htm' else '.htm'
@@ -201,94 +213,270 @@ class Slide(models.Model):
                 aws_secret_access_key=amazon_secret_key
             )
 
-            zip_content = base64.b64decode(scorm_data.datas)
+            # =========================================================
+            # ODOO 19 - ir.attachment.raw
+            # =========================================================
+
+            raw_data = scorm_data.raw
+
+            if not raw_data:
+                raise UserError(
+                    "The uploaded SCORM file is empty."
+                )
+
+            _logger.info(
+                "SCORM raw type: %s",
+                type(raw_data)
+            )
+
+            # Odoo 19 may return a LocalBinaryFile object.
+            # Read its actual binary content.
+            if hasattr(raw_data, "read"):
+                zip_content = raw_data.read()
+            else:
+                zip_content = raw_data
+
+            if not isinstance(zip_content, bytes):
+                zip_content = bytes(zip_content)
+
+            _logger.info(
+                "SCORM upload: name=%s size=%s first_bytes=%r",
+                scorm_data.name,
+                len(zip_content),
+                zip_content[:20],
+            )
+
+            # =========================================================
+            # VALIDATE ZIP
+            # =========================================================
+
+            zip_buffer = BytesIO(zip_content)
+
+            if not zipfile.is_zipfile(zip_buffer):
+                raise UserError(
+                    f"The uploaded file '{scorm_data.name}' "
+                    "is not a valid ZIP archive."
+                )
+
+            zip_buffer.seek(0)
 
             base_name = os.path.splitext(scorm_data.name)[0]
             channel_id = self.channel_id.id
-            file_prefix = f"{base_name}_Scorm_{channel_id}"
+
+            file_prefix = (
+                f"{base_name}_Scorm_{channel_id}"
+            )
 
             selected_file = None
             scorm_version = None
 
             with tempfile.TemporaryDirectory() as temp_dir:
 
-                zip_file_path = os.path.join(temp_dir, scorm_data.name)
+                zip_file_path = os.path.join(
+                    temp_dir,
+                    scorm_data.name
+                )
 
                 with open(zip_file_path, "wb") as f:
                     f.write(zip_content)
 
-                extract_dir = os.path.join(temp_dir, "scorm")
-                os.makedirs(extract_dir, exist_ok=True)
+                extract_dir = os.path.join(
+                    temp_dir,
+                    "scorm"
+                )
 
-                with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-                    zip_ref.extractall(extract_dir)
+                os.makedirs(
+                    extract_dir,
+                    exist_ok=True
+                )
+
+                # =====================================================
+                # EXTRACT ZIP
+                # =====================================================
+
+                with zipfile.ZipFile(
+                        zip_file_path,
+                        'r'
+                ) as zip_ref:
+
+                    zip_ref.extractall(
+                        extract_dir
+                    )
+
+                # =====================================================
+                # GET ALL FILES
+                # =====================================================
 
                 all_files = []
 
-                for root, _, files in os.walk(extract_dir):
-                    for f in files:
-                        rel = os.path.relpath(os.path.join(root, f), extract_dir)
-                        rel = rel.replace(os.sep, '/')
+                for root, _, files in os.walk(
+                        extract_dir
+                ):
+
+                    for file in files:
+                        rel = os.path.relpath(
+                            os.path.join(root, file),
+                            extract_dir
+                        )
+
+                        rel = rel.replace(
+                            os.sep,
+                            '/'
+                        )
+
                         all_files.append(rel)
+
+                _logger.info(
+                    "SCORM files found: %s",
+                    len(all_files)
+                )
+
+                # =====================================================
+                # FIND LAUNCH FILE
+                # =====================================================
 
                 launch_file = None
 
-                for root, _, files in os.walk(extract_dir):
+                for root, _, files in os.walk(
+                        extract_dir
+                ):
 
                     for file in files:
 
-                        if file.lower().endswith(".xml"):
+                        if not file.lower().endswith(".xml"):
+                            continue
 
-                            xml_path = os.path.join(root, file)
+                        xml_path = os.path.join(
+                            root,
+                            file
+                        )
 
-                            try:
+                        try:
 
-                                tree = ET.parse(xml_path)
-                                root_xml = tree.getroot()
+                            tree = ET.parse(
+                                xml_path
+                            )
 
-                                if file.lower() == "imsmanifest.xml":
+                            root_xml = tree.getroot()
 
-                                    version_el = next(
-                                        (el for el in root_xml.iter() if el.tag.lower().endswith("schemaversion")),
-                                        None
+                            # -----------------------------------------
+                            # SCORM VERSION
+                            # -----------------------------------------
+
+                            if file.lower() == "imsmanifest.xml":
+
+                                version_el = next(
+                                    (
+                                        el
+                                        for el in root_xml.iter()
+                                        if strip_namespace(
+                                        el.tag
+                                    ).lower()
+                                           == "schemaversion"
+                                    ),
+                                    None
+                                )
+
+                                if (
+                                        version_el is not None
+                                        and version_el.text
+                                ):
+
+                                    version = (
+                                        version_el.text.strip()
                                     )
 
-                                    if version_el is not None and version_el.text:
-                                        if version_el.text.strip() == "1.2":
-                                            scorm_version = "scorm11"
-                                        else:
-                                            scorm_version = "scorm2004"
+                                    if version == "1.2":
+                                        scorm_version = "scorm11"
+                                    else:
+                                        scorm_version = "scorm2004"
 
-                                for res in root_xml.iter():
+                            # -----------------------------------------
+                            # FIND SCO
+                            # -----------------------------------------
 
-                                    if strip_namespace(res.tag) == "resource":
+                            for res in root_xml.iter():
 
-                                        scorm_type = next(
-                                            (v for k, v in res.attrib.items() if k.lower().endswith("scormtype")),
-                                            None
+                                if (
+                                        strip_namespace(
+                                            res.tag
+                                        ).lower()
+                                        != "resource"
+                                ):
+                                    continue
+
+                                scorm_type = next(
+                                    (
+                                        value
+                                        for key, value
+                                        in res.attrib.items()
+                                        if strip_namespace(
+                                        key
+                                    ).lower()
+                                           == "scormtype"
+                                    ),
+                                    None
+                                )
+
+                                href = res.attrib.get(
+                                    "href"
+                                )
+
+                                if (
+                                        scorm_type
+                                        and scorm_type.lower()
+                                        == "sco"
+                                        and href
+                                ):
+
+                                    base, ext = (
+                                        os.path.splitext(
+                                            href
                                         )
+                                    )
 
-                                        href = res.attrib.get("href")
+                                    launch_file = (
+                                        href
+                                        if href in all_files
+                                        else
+                                        find_case_insensitive(
+                                            href,
+                                            all_files
+                                        )
+                                        or
+                                        find_with_alt_extensions(
+                                            base,
+                                            ext.lower(),
+                                            all_files
+                                        )
+                                    )
 
-                                        # if scorm_type and href:
-                                        if scorm_type and scorm_type.lower() == "sco" and href:
+                                    if launch_file:
+                                        break
 
-                                            base, ext = os.path.splitext(href)
+                            if launch_file:
+                                break
 
-                                            launch_file = (
-                                                href if href in all_files else
-                                                find_case_insensitive(href, all_files) or
-                                                find_with_alt_extensions(base, ext.lower(), all_files)
-                                            )
+                        except ET.ParseError:
+                            _logger.warning(
+                                "Unable to parse XML: %s",
+                                xml_path
+                            )
+                            continue
 
-                                            if launch_file:
-                                                break
+                        except Exception:
+                            _logger.exception(
+                                "Error processing XML: %s",
+                                xml_path
+                            )
+                            continue
 
-                                if launch_file:
-                                    break
+                    if launch_file:
+                        break
 
-                            except Exception:
-                                continue
+                # =====================================================
+                # FALLBACK LAUNCH FILE
+                # =====================================================
 
                 if not launch_file:
 
@@ -296,36 +484,87 @@ class Slide(models.Model):
                         "index_lms.html",
                         "indexAPI.html",
                         "index.html",
-                        "story.html"
+                        "story.html",
                     ]
 
-                    for p in preferred:
-                        match = next((f for f in all_files if f.lower().endswith(p.lower())), None)
+                    for preferred_file in preferred:
+
+                        match = next(
+                            (
+                                f
+                                for f in all_files
+                                if f.lower().endswith(
+                                preferred_file.lower()
+                            )
+                            ),
+                            None
+                        )
+
                         if match:
                             launch_file = match
                             break
 
                 if not launch_file:
-                    raise UserError("SCORM launch file not found.")
+                    raise UserError(
+                        "SCORM launch file not found."
+                    )
 
-                selected_file = quote(f"{file_prefix}/{launch_file}", safe="/()")
+                _logger.info(
+                    "SCORM launch file: %s",
+                    launch_file
+                )
 
-                for root, _, files in os.walk(extract_dir):
+                # =====================================================
+                # S3 LAUNCH URL
+                # =====================================================
+
+                selected_file = quote(
+                    f"{file_prefix}/{launch_file}",
+                    safe="/()"
+                )
+
+                # =====================================================
+                # UPLOAD ALL FILES
+                # =====================================================
+
+                for root, _, files in os.walk(
+                        extract_dir
+                ):
 
                     for file in files:
 
-                        full = os.path.join(root, file)
+                        full = os.path.join(
+                            root,
+                            file
+                        )
 
-                        rel = os.path.relpath(full, extract_dir)
-                        rel = rel.replace(os.sep, "/")
+                        rel = os.path.relpath(
+                            full,
+                            extract_dir
+                        )
 
-                        s3_key = f"{file_prefix}/{rel}"
+                        rel = rel.replace(
+                            os.sep,
+                            "/"
+                        )
 
-                        mime, _ = guess_type(file)
+                        s3_key = (
+                            f"{file_prefix}/{rel}"
+                        )
+
+                        mime, _ = guess_type(
+                            file
+                        )
+
                         if mime is None:
-                            mime = "application/octet-stream"
+                            mime = (
+                                "application/octet-stream"
+                            )
 
-                        with open(full, "rb") as f:
+                        with open(
+                                full,
+                                "rb"
+                        ) as f:
 
                             s3.upload_fileobj(
                                 f,
@@ -337,15 +576,31 @@ class Slide(models.Model):
                                 }
                             )
 
-                story_url = f"/scorm/{selected_file}"
+                        _logger.info(
+                            "Uploaded SCORM file: %s",
+                            s3_key
+                        )
+
+                story_url = (
+                    f"/scorm/{selected_file}"
+                )
 
                 if scorm_version:
-                    self.scorm_version = scorm_version
+                    self.scorm_version = (
+                        scorm_version
+                    )
 
                 return story_url
 
         except Exception as e:
-            raise ValidationError(f"SCORM upload failed: {str(e)}")
+
+            _logger.exception(
+                "SCORM upload failed"
+            )
+
+            raise ValidationError(
+                f"SCORM upload failed: {str(e)}"
+            )
 
     @api.depends('slide_category', 'google_drive_id', 'video_source_type', 'youtube_id')
     def _compute_embed_code(self):
@@ -358,7 +613,7 @@ class Slide(models.Model):
                     elif rec.slide_category == 'scorm' and rec.scorm_data and rec.is_tincan:
                         user_name = self.env.user.id
                         user_mail = self.env.user.login
-                        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+                        base_url = self.env['ir.config_parameter'].sudo().get_str('web.base.url')
                         end_point = f"{base_url}/slides/slide"
                         encoded_endpoint = urllib.parse.quote(end_point, safe=":/?&=")
                         actor_data = {
@@ -382,134 +637,443 @@ class Slide(models.Model):
                         rec.embed_code = Markup('<iframe src="%s" frameborder="0" autoplay="1"></iframe>') % (rec.filename)
                         rec.embed_code_external = Markup('<iframe src="%s" aria-label="%s"></iframe>') % (rec.filename, _('Scorm'))
 
-
     def read_files_from_zip(self):
+        self.ensure_one()
 
-        file = base64.decodebytes(self.scorm_data.datas)
+        attachment = self.scorm_data[:1]
 
-        fobj = tempfile.NamedTemporaryFile(delete=False)
-        fobj.write(file)
-        fobj.flush()
-        fobj.seek(0)
+        if not attachment:
+            return
 
-        path = os.path.dirname(os.path.abspath(__file__))
+        # Odoo 19:
+        # ir.attachment.raw contains the actual binary content.
+        file_data = attachment.raw
 
-        html_file_name = None
-        manifest_file = None
+        if not file_data:
+            raise UserError(_("The SCORM package is empty."))
 
-        module_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # ---------------------------------------------------------
+        # Validate ZIP
+        # ---------------------------------------------------------
+        zip_buffer = BytesIO(file_data)
+
+        if not zipfile.is_zipfile(zip_buffer):
+            raise ValidationError(
+                _("The uploaded SCORM file is not a valid ZIP archive.")
+            )
+
+        zip_buffer.seek(0)
+
+        # ---------------------------------------------------------
+        # Destination directory
+        # ---------------------------------------------------------
+        module_path = os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))
+        )
 
         source_dir = os.path.join(
             module_path,
             "static",
             "media",
             "scorm",
-            str(self.id)
+            str(self.id),
         )
 
         os.makedirs(source_dir, exist_ok=True)
 
-        def find_case_insensitive(name, file_list):
-            return next((f for f in file_list if f.lower() == name.lower()), None)
+        # ---------------------------------------------------------
+        # Helper functions
+        # ---------------------------------------------------------
+        def normalize_path(path):
+            """
+            Normalize SCORM paths so that:
+                ./story.html
+                story.html
+                folder/../story.html
 
-        def find_with_alt_extensions(base, ext, file_list):
-            alt_ext = '.html' if ext == '.htm' else '.htm'
-            alt_name = base + alt_ext
-            return find_case_insensitive(alt_name, file_list)
+            can be compared consistently.
+            """
+            if not path:
+                return ""
+
+            path = path.replace("\\", "/")
+            path = urllib.parse.unquote(path)
+
+            # Remove query string / fragment if present.
+            path = path.split("?", 1)[0]
+            path = path.split("#", 1)[0]
+
+            # Remove leading ./ and /
+            path = path.lstrip("/")
+
+            # Normalize path components.
+            path = os.path.normpath(path).replace("\\", "/")
+
+            if path == ".":
+                return ""
+
+            return path
+
+        def find_file_in_zip(href, files):
+            """
+            Find href from imsmanifest.xml inside ZIP.
+            Comparison is case-insensitive and path-normalized.
+            """
+            normalized_href = normalize_path(href)
+
+            if not normalized_href:
+                return None
+
+            # Exact normalized match.
+            for file_name in files:
+                if normalize_path(file_name).lower() == normalized_href.lower():
+                    return file_name
+
+            # Sometimes manifest contains only filename.
+            href_basename = os.path.basename(normalized_href).lower()
+
+            for file_name in files:
+                if os.path.basename(
+                        normalize_path(file_name)
+                ).lower() == href_basename:
+                    return file_name
+
+            return None
 
         def strip_namespace(tag):
-            return tag.split('}')[-1] if '}' in tag else tag
+            if "}" in tag:
+                return tag.split("}", 1)[1]
 
+            if ":" in tag:
+                return tag.split(":", 1)[1]
+
+            return tag
+
+        def get_scorm_type(element):
+            """
+            Find attributes such as:
+
+                adlcp:scormtype="sco"
+
+            regardless of namespace representation.
+            """
+            for key, value in element.attrib.items():
+
+                clean_key = strip_namespace(key).lower()
+
+                if clean_key == "scormtype":
+                    return value
+
+            return None
+
+        def find_manifest(files):
+            """
+            Find the real imsmanifest.xml.
+            Prefer root-level manifest.
+            """
+            root_manifest = None
+
+            for file_name in files:
+
+                normalized = normalize_path(file_name)
+
+                if not normalized:
+                    continue
+
+                if os.path.basename(normalized).lower() == "imsmanifest.xml":
+
+                    # Prefer root-level manifest.
+                    if "/" not in normalized:
+                        return file_name
+
+                    if root_manifest is None:
+                        root_manifest = file_name
+
+            return root_manifest
+
+        # ---------------------------------------------------------
+        # Read ZIP
+        # ---------------------------------------------------------
         try:
 
-            with zipfile.ZipFile(fobj, 'r') as zipObj:
+            with zipfile.ZipFile(zip_buffer, "r") as zip_obj:
 
-                zipObj.extractall(source_dir)
+                # -----------------------------------------------------
+                # Security: prevent ZIP path traversal
+                # -----------------------------------------------------
+                source_dir_abs = os.path.abspath(source_dir)
 
-                listOfFileNames = [
-                    f.replace("\\", "/") for f in zipObj.namelist()
+                for zip_info in zip_obj.infolist():
+
+                    if zip_info.is_dir():
+                        continue
+
+                    extracted_path = os.path.abspath(
+                        os.path.join(
+                            source_dir,
+                            zip_info.filename,
+                        )
+                    )
+
+                    if not (
+                            extracted_path == source_dir_abs
+                            or extracted_path.startswith(source_dir_abs + os.sep)
+                    ):
+                        raise ValidationError(
+                            _(
+                                "The SCORM ZIP contains an unsafe "
+                                "file path: %s"
+                            )
+                            % zip_info.filename
+                        )
+
+                # -----------------------------------------------------
+                # Extract ZIP
+                # -----------------------------------------------------
+                zip_obj.extractall(source_dir)
+
+                # -----------------------------------------------------
+                # List files
+                # -----------------------------------------------------
+                list_of_files = [
+                    name.replace("\\", "/")
+                    for name in zip_obj.namelist()
+                    if not name.endswith("/")
                 ]
 
-                manifest = next(
-                    (x for x in listOfFileNames if x.lower().endswith("imsmanifest.xml")),
-                    None
+                if not list_of_files:
+                    raise ValidationError(
+                        _("The SCORM ZIP package is empty.")
+                    )
+
+                _logger.info(
+                    "SCORM package contains %s files",
+                    len(list_of_files),
                 )
 
+                # -----------------------------------------------------
+                # Find IMS manifest
+                # -----------------------------------------------------
+                manifest = find_manifest(list_of_files)
+
+                html_file_name = None
+                manifest_file = None
+
                 if manifest:
-                    manifest_file = os.path.join(source_dir, manifest)
 
-                for name in listOfFileNames:
+                    manifest_path = os.path.join(
+                        source_dir,
+                        manifest.replace("/", os.sep),
+                    )
 
-                    if name.lower().endswith(".xml"):
+                    manifest_file = manifest_path
 
-                        try:
+                    _logger.info(
+                        "SCORM manifest found: %s",
+                        manifest,
+                    )
 
-                            xml_path = os.path.join(source_dir, name)
+                    # -------------------------------------------------
+                    # Parse manifest
+                    # -------------------------------------------------
+                    try:
 
-                            tree = ET.parse(xml_path)
-                            root = tree.getroot()
+                        tree = ET.parse(manifest_path)
+                        root = tree.getroot()
 
-                            for res in root.iter():
+                    except ET.ParseError as e:
 
-                                if strip_namespace(res.tag) == "resource":
+                        raise ValidationError(
+                            _(
+                                "The SCORM imsmanifest.xml is invalid: %s"
+                            )
+                            % e
+                        )
 
-                                    scorm_type = next(
-                                        (v for k, v in res.attrib.items() if k.lower().endswith("scormtype")),
-                                        None
-                                    )
+                    # -------------------------------------------------
+                    # Find SCORM SCO resource
+                    # -------------------------------------------------
+                    sco_resources = []
 
-                                    href = res.attrib.get("href")
+                    for element in root.iter():
 
-                                    # if scorm_type and href:
-                                    if scorm_type and scorm_type.lower() == "sco" and href:
-
-                                        base, ext = os.path.splitext(href)
-
-                                        html_file_name = (
-                                            href if href in listOfFileNames else
-                                            find_case_insensitive(href, listOfFileNames) or
-                                            find_with_alt_extensions(base, ext.lower(), listOfFileNames)
-                                        )
-
-                                        if html_file_name:
-                                            break
-
-                            if html_file_name:
-                                break
-
-                        except ET.ParseError:
+                        if strip_namespace(element.tag).lower() != "resource":
                             continue
 
+                        scorm_type = get_scorm_type(element)
+                        href = element.attrib.get("href")
+
+                        _logger.debug(
+                            "SCORM resource: href=%s scormtype=%s",
+                            href,
+                            scorm_type,
+                        )
+
+                        if (
+                                scorm_type
+                                and scorm_type.lower() == "sco"
+                                and href
+                        ):
+                            sco_resources.append(
+                                (element, href)
+                            )
+
+                    # -------------------------------------------------
+                    # Select launch file
+                    # -------------------------------------------------
+                    if sco_resources:
+
+                        _logger.info(
+                            "Found %s SCO resource(s)",
+                            len(sco_resources),
+                        )
+
+                        for resource, href in sco_resources:
+
+                            candidate = find_file_in_zip(
+                                href,
+                                list_of_files,
+                            )
+
+                            if candidate:
+                                html_file_name = candidate
+
+                                _logger.info(
+                                    "SCORM launch file selected from "
+                                    "imsmanifest.xml: %s",
+                                    html_file_name,
+                                )
+
+                                break
+
+                    else:
+
+                        _logger.warning(
+                            "No resource with scormtype='sco' "
+                            "found in imsmanifest.xml"
+                        )
+
+                else:
+
+                    _logger.warning(
+                        "No imsmanifest.xml found in SCORM package"
+                    )
+
+                # -----------------------------------------------------
+                # FALLBACK ONLY
+                #
+                # This should only be used when:
+                #
+                # 1. imsmanifest.xml does not exist
+                # OR
+                # 2. manifest does not contain a valid SCO resource
+                # -----------------------------------------------------
                 if not html_file_name:
+
+                    _logger.warning(
+                        "Using SCORM launch-file fallback"
+                    )
 
                     preferred = [
                         "index_lms.html",
                         "indexAPI.html",
                         "index.html",
-                        "story.html"
+                        "story.html",
                     ]
 
-                    for p in preferred:
-                        match = next(
-                            (f for f in listOfFileNames if f.lower().endswith(p.lower())),
-                            None
-                        )
-                        if match:
-                            html_file_name = match
+                    for preferred_file in preferred:
+
+                        for file_name in list_of_files:
+
+                            if (
+                                    os.path.basename(
+                                        normalize_path(file_name)
+                                    ).lower()
+                                    == preferred_file.lower()
+                            ):
+                                html_file_name = file_name
+
+                                _logger.warning(
+                                    "SCORM fallback launch file selected: %s",
+                                    html_file_name,
+                                )
+
+                                break
+
+                        if html_file_name:
                             break
 
-                if html_file_name:
-                    from urllib.parse import quote
+                # -----------------------------------------------------
+                # Nothing found
+                # -----------------------------------------------------
+                if not html_file_name:
+                    raise ValidationError(
+                        _(
+                            "Could not determine the SCORM launch file.\n\n"
+                            "The package must contain a valid "
+                            "imsmanifest.xml with a resource having "
+                            "scormtype='sco', or one of the fallback "
+                            "launch files: index_lms.html, indexAPI.html, "
+                            "index.html, story.html."
+                        )
+                    )
 
-                    clean_path = quote(html_file_name)
+                # -----------------------------------------------------
+                # Build URL
+                # -----------------------------------------------------
+                clean_path = quote(
+                    normalize_path(html_file_name),
+                    safe="/",
+                )
 
-                    self.filename = f'/website_scorm_elearning/static/media/scorm/{self.id}/{clean_path}'
-                if manifest_file:
+                self.filename = (
+                    "/website_scorm_elearning/static/media/scorm/"
+                    f"{self.id}/{clean_path}"
+                )
+
+                _logger.info(
+                    "SCORM launch URL: %s",
+                    self.filename,
+                )
+
+                # -----------------------------------------------------
+                # Save manifest path
+                # -----------------------------------------------------
+                if (
+                        manifest_file
+                        and os.path.isfile(manifest_file)
+                ):
                     self.manifest_file = manifest_file
-                    self.scorm_version = self.extract_scorm_version(manifest_file)
 
-        except OSError:
-            raise UserError("Error extracting SCORM package")
+                    try:
+
+                        self.scorm_version = (
+                            self.extract_scorm_version(
+                                manifest_file
+                            )
+                        )
+
+                    except Exception:
+
+                        _logger.exception(
+                            "Unable to determine SCORM version"
+                        )
+
+        except zipfile.BadZipFile:
+
+            raise ValidationError(
+                _("The uploaded SCORM file is not a valid ZIP archive.")
+            )
+
+        except OSError as e:
+
+            _logger.exception(
+                "Error extracting SCORM package"
+            )
+
+            raise UserError(
+                _("Error extracting SCORM package: %s") % e
+            )
     
     def extract_scorm_version(self, manifest_file):
         tree = ET.parse(manifest_file)
