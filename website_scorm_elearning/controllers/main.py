@@ -57,7 +57,7 @@ class WebsiteSlidesScorm(WebsiteSlides):
 
     @http.route('/slides/slide/set_completed_scorm', website=True, type="jsonrpc", auth="public")
     def slide_set_completed_scorm(self, slide_id, completion_type):
-        if request.website.is_public_user():
+        if request.env.user._is_public():
             return {'error': 'public_user'}
         fetch_res = self._fetch_slide(slide_id)
         slide = fetch_res['slide']
