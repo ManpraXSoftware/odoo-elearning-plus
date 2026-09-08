@@ -46,22 +46,11 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         );
 
 
-        /*
-         * IMPORTANT:
-         *
-         * We observe Odoo's existing fullscreen content area.
-         *
-         * Odoo changes the content when the user selects
-         * another slide.
-         *
-         * We don't create our own fullscreen.
-         */
+
         this.startContentObserver();
 
 
-        /*
-         * Initial render.
-         */
+
         this.renderTimer = setTimeout(() => {
 
             this.renderScorm();
@@ -73,11 +62,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
     }
 
 
-    /**
-     * ============================================================
-     * FIND ODOO CONTENT
-     * ============================================================
-     */
+
     getContentContainer() {
 
         return (
@@ -92,18 +77,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
     }
 
 
-    /**
-     * ============================================================
-     * WATCH ODOO SLIDE CONTENT
-     * ============================================================
-     *
-     * This is the important part.
-     *
-     * Odoo itself changes the DOM when the selected slide changes.
-     *
-     * We watch that existing container instead of guessing
-     * which EventBus event Odoo is using.
-     */
+
     startContentObserver() {
 
         const content =
@@ -216,11 +190,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
     }
 
 
-    /**
-     * ============================================================
-     * SCHEDULE RENDER
-     * ============================================================
-     */
+
     scheduleRender() {
 
         clearTimeout(
@@ -241,11 +211,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
     }
 
 
-    /**
-     * ============================================================
-     * RENDER SCORM
-     * ============================================================
-     */
+
     renderScorm() {
 
         if (this.destroyed) {
@@ -280,9 +246,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         }
 
 
-        /*
-         * Only handle SCORM slides.
-         */
+
         if (
             slide.category !== "scorm"
         ) {
@@ -298,9 +262,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         }
 
 
-        /*
-         * Find SCORM URL.
-         */
+
         const scormUrl =
             this.getScormUrl(slide);
 
@@ -323,10 +285,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         }
 
 
-        /*
-         * If this exact slide is already loaded,
-         * don't reload the Storyline application.
-         */
+
         if (
             this.currentSlideId === slide.id &&
             this.scormIframe &&
@@ -344,15 +303,11 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         }
 
 
-        /*
-         * Remove previous SCORM.
-         */
+
         this.removeScorm();
 
 
-        /*
-         * Find Odoo's content area.
-         */
+
         const content =
             this.getContentContainer();
 
@@ -376,11 +331,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         );
 
 
-        /*
-         * ========================================================
-         * SCORM CONTAINER
-         * ========================================================
-         */
+
         const container =
             document.createElement(
                 "div"
@@ -395,9 +346,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
             String(slide.id);
 
 
-        /*
-         * Fill Odoo's content area.
-         */
+
         Object.assign(
             container.style,
             {
@@ -413,11 +362,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         );
 
 
-        /*
-         * ========================================================
-         * IFRAME
-         * ========================================================
-         */
+
         const iframe =
             document.createElement(
                 "iframe"
@@ -471,25 +416,19 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         );
 
 
-        /*
-         * Add iframe.
-         */
+
         container.appendChild(
             iframe
         );
 
 
-        /*
-         * Add to Odoo fullscreen content.
-         */
+
         content.appendChild(
             container
         );
 
 
-        /*
-         * Save references.
-         */
+
         this.scormContainer =
             container;
 
@@ -543,11 +482,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         );
 
 
-        /*
-         * ========================================================
-         * IFRAME LOAD
-         * ========================================================
-         */
+
         iframe.addEventListener(
             "load",
             () => {
@@ -579,11 +514,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         );
 
 
-        /*
-         * ========================================================
-         * RESIZE OBSERVER
-         * ========================================================
-         */
+
         if (
             typeof ResizeObserver !==
             "undefined"
@@ -609,9 +540,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         }
 
 
-        /*
-         * Browser resize.
-         */
+
         this._resizeHandler =
             () => {
 
@@ -625,9 +554,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         );
 
 
-        /*
-         * Final check.
-         */
+
         setTimeout(() => {
 
             if (
@@ -682,11 +609,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
     }
 
 
-    /**
-     * ============================================================
-     * UPDATE SIZE
-     * ============================================================
-     */
+
     updateScormSize() {
 
         if (
@@ -715,11 +638,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         }
 
 
-        /*
-         * Odoo owns the fullscreen dimensions.
-         *
-         * We only fill the content area.
-         */
+
         content.style.minWidth =
             "0";
 
@@ -741,25 +660,11 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
             "100%";
 
 
-        /*
-         * Do NOT use:
-         *
-         * position: fixed
-         * top: 0
-         * left: 0
-         * width: 100vw
-         * height: 100vh
-         *
-         * because that bypasses Odoo fullscreen.
-         */
+
     }
 
 
-    /**
-     * ============================================================
-     * REMOVE SCORM
-     * ============================================================
-     */
+
     removeScorm() {
 
         if (
@@ -809,11 +714,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
     }
 
 
-    /**
-     * ============================================================
-     * FIND SCORM URL
-     * ============================================================
-     */
+
     getScormUrl(slide) {
 
         console.log(
@@ -827,9 +728,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         );
 
 
-        /*
-         * Direct URL.
-         */
+
         if (slide.embedUrl) {
             return slide.embedUrl;
         }
@@ -845,9 +744,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         }
 
 
-        /*
-         * Embed code.
-         */
+
         const embedCode =
             slide.embedCode ||
             slide.embed_code ||
@@ -919,11 +816,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
     }
 
 
-    /**
-     * ============================================================
-     * ABSOLUTE URL
-     * ============================================================
-     */
+
     makeAbsoluteUrl(url) {
 
         if (!url) {
@@ -965,11 +858,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
     }
 
 
-    /**
-     * ============================================================
-     * DESTROY
-     * ============================================================
-     */
+
     destroy() {
 
         console.log(
@@ -1000,15 +889,7 @@ export class WebsiteSlidesScormFullscreen extends Interaction {
         this.removeScorm();
 
 
-        /*
-         * IMPORTANT:
-         *
-         * Never do:
-         *
-         * this.isDestroyed = true;
-         *
-         * Interaction.isDestroyed is read-only.
-         */
+
         if (
             typeof super.destroy ===
             "function"

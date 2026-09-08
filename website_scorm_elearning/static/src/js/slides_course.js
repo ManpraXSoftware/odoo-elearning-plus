@@ -4,9 +4,7 @@ import { Interaction } from "@web/public/interaction";
 import { registry } from "@web/core/registry";
 import { rpc } from "@web/core/network/rpc";
 
-/**
- * SCORM API Handler for standard lesson pages
- */
+
 class SCORM_API {
     constructor(slideId) {
         this.slideId = slideId;

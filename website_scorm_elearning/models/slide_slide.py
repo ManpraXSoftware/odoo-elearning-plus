@@ -13,6 +13,8 @@ from io import BytesIO
 from mimetypes import guess_type
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
+import unicodedata
+import re
 
 import boto3
 
@@ -95,6 +97,16 @@ class Slide(models.Model):
         if not tag:
             return ''
         return tag.split('}', 1)[-1]
+
+    @staticmethod
+    def _ascii_safe_name(text):
+        if not text:
+            return 'file'
+        normalized = unicodedata.normalize('NFKD', text)
+        ascii_bytes = normalized.encode('ascii', 'ignore')
+        ascii_text = ascii_bytes.decode('ascii')
+        ascii_text = re.sub(r'[^A-Za-z0-9._-]+', '_', ascii_text)
+        return ascii_text.strip('_') or 'file'
 
     @staticmethod
     def _normalize_zip_path(path):
@@ -485,9 +497,9 @@ class Slide(models.Model):
 
     def _upload_to_s3(self, scorm_data):
         icp = self.env['ir.config_parameter'].sudo()
-        amazon_access_key = icp.get_param('amazon_s3_connector.amazon_access_key')
-        amazon_secret_key = icp.get_param('amazon_s3_connector.amazon_secret_key')
-        bucket_name = icp.get_param('amazon_s3_connector.amazon_bucket_name')
+        amazon_access_key = icp.get_str('amazon_s3_connector.amazon_access_key')
+        amazon_secret_key = icp.get_str('amazon_s3_connector.amazon_secret_key')
+        bucket_name = icp.get_str('amazon_s3_connector.amazon_bucket_name')
 
         if not amazon_access_key or not amazon_secret_key or not bucket_name:
             raise UserError(_("Amazon S3 credentials or bucket name are not configured in settings."))
@@ -514,7 +526,7 @@ class Slide(models.Model):
                     _("The uploaded file '%s' is not a valid ZIP archive.") % scorm_data.name
                 )
 
-            base_name = os.path.splitext(scorm_data.name)[0]
+            base_name = self._ascii_safe_name(os.path.splitext(scorm_data.name)[0])
 
             try:
                 channel_id = int(str(self.channel_id.id).split("_")[-1])

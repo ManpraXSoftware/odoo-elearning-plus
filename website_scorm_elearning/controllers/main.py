@@ -88,9 +88,9 @@ class WebsiteSlidesScorm(WebsiteSlides):
 
     @http.route(['/scorm/<path:file_path>'], type='http', auth='public', website=True)
     def scorm_proxy(self, file_path, **kwargs):
-        amazon_access_key = request.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_access_key')
-        amazon_secret_key = request.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_secret_key')
-        bucket_name = request.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_bucket_name')
+        amazon_access_key = request.env['ir.config_parameter'].sudo().get_str('amazon_s3_connector.amazon_access_key')
+        amazon_secret_key = request.env['ir.config_parameter'].sudo().get_str('amazon_s3_connector.amazon_secret_key')
+        bucket_name = request.env['ir.config_parameter'].sudo().get_str('amazon_s3_connector.amazon_bucket_name')
 
         if not amazon_access_key or not amazon_secret_key or not bucket_name:
             return Response("Amazon S3 credentials are not properly configured.", status=500)
