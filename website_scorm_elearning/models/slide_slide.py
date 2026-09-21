@@ -189,12 +189,6 @@ class Slide(models.Model):
         self.filename = False
         self.manifest_file = False
 
-    @api.constrains('slide_category', 'filename')
-    def _check_scorm_filename(self):
-        for slide in self:
-            if slide.slide_category == 'scorm' and not slide.filename:
-                raise ValidationError(_("Please upload a SCORM package for this slide."))
-
     @api.depends('slide_category', 'google_drive_id', 'video_source_type', 'youtube_id')
     def _compute_embed_code(self):
             for rec in self:
