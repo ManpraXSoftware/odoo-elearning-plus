@@ -99,4 +99,10 @@ class WebsiteSlidesScorm(WebsiteSlides):
         if not attachment:
             return Response(status=404)
 
-        return attachment._to_http_stream().get_response()
+        # Stream.get_response() defaults to a locked-down CSP meant for
+        # arbitrary user-uploaded attachment downloads (so an uploaded HTML
+        # file can't execute anything if opened directly). Here we're
+        # intentionally serving an access-checked SCORM package as an
+        # interactive app - it needs its own inline scripts/styles and
+        # same-origin resource loading to actually run.
+        return attachment._to_http_stream().get_response(content_security_policy=None)
