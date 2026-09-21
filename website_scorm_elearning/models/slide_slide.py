@@ -119,6 +119,26 @@ class Slide(models.Model):
                 res[slide.id]['quiz_karma_won'] = slide_partner_id.lms_scorm_karma
         return res
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        slides = super().create(vals_list)
+        for slide in slides:
+            if slide.slide_category == 'scorm' and slide.scorm_data:
+                slide._process_scorm_upload()
+        return slides
+
+    def write(self, vals):
+        res = super().write(vals)
+        if 'scorm_data' in vals:
+            for slide in self:
+                if slide.slide_category != 'scorm':
+                    continue
+                if slide.scorm_data:
+                    slide._process_scorm_upload()
+                else:
+                    slide._clear_scorm_files()
+        return res
+
     def unlink(self):
         scorm_attachments = self.env['ir.attachment'].sudo().search([
             ('res_model', '=', 'slide.slide'),
@@ -149,23 +169,31 @@ class Slide(models.Model):
             new_slides |= new_slide
         return new_slides
 
-    @api.onchange('scorm_data')
-    def _on_change_scorm_data(self):
-        if self.scorm_data:
-            if len(self.scorm_data) > 1:
-                raise ValidationError(_("Only one scorm package allowed per slide."))
-            tmp = self.scorm_data.name.split('.')
-            ext = tmp[len(tmp) - 1]
-            if ext.lower() != 'zip':
-                raise ValidationError(_("The file must be a zip file.!!"))
-            self.read_files_from_zip()
-        else:
-            self.env['ir.attachment'].sudo().search([
-                ('res_model', '=', 'slide.slide'),
-                ('res_id', '=', self.id),
-                ('scorm_relpath', '!=', False),
-            ]).unlink()
-            self.filename = False
+    def _process_scorm_upload(self):
+        self.ensure_one()
+        if len(self.scorm_data) > 1:
+            raise ValidationError(_("Only one scorm package allowed per slide."))
+        name = self.scorm_data.name or ''
+        ext = name.rsplit('.', 1)[-1] if '.' in name else ''
+        if ext.lower() != 'zip':
+            raise ValidationError(_("The file must be a zip file.!!"))
+        self.read_files_from_zip()
+
+    def _clear_scorm_files(self):
+        self.ensure_one()
+        self.env['ir.attachment'].sudo().search([
+            ('res_model', '=', 'slide.slide'),
+            ('res_id', '=', self.id),
+            ('scorm_relpath', '!=', False),
+        ]).unlink()
+        self.filename = False
+        self.manifest_file = False
+
+    @api.constrains('slide_category', 'filename')
+    def _check_scorm_filename(self):
+        for slide in self:
+            if slide.slide_category == 'scorm' and not slide.filename:
+                raise ValidationError(_("Please upload a SCORM package for this slide."))
 
     @api.depends('slide_category', 'google_drive_id', 'video_source_type', 'youtube_id')
     def _compute_embed_code(self):
@@ -243,8 +271,7 @@ class Slide(models.Model):
         return resources_by_id.get(resource_id) if resource_id else None
 
     def read_files_from_zip(self):
-        if not (isinstance(self.id, int) and self.id):
-            raise UserError(_("Please save the slide once before uploading a SCORM package."))
+        self.ensure_one()
 
         # drop any files left over from a previous package on this slide
         self.env['ir.attachment'].sudo().search([
@@ -361,7 +388,7 @@ class Slide(models.Model):
     def extract_scorm_version(self, manifest_relpath):
         attachment = self.env['ir.attachment'].sudo().search([
             ('res_model', '=', 'slide.slide'),
-            ('res_id', '=', self.id),
+            ('res_id', '=', self._origin.id),
             ('scorm_relpath', '=', manifest_relpath),
         ], limit=1)
         if not attachment:
