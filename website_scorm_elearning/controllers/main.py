@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
-import boto3
-import mimetypes
 from odoo import http
 from odoo.http import request, Response
 from odoo.addons.website_slides.controllers.main import WebsiteSlides
@@ -86,35 +84,19 @@ class WebsiteSlidesScorm(WebsiteSlides):
                 user_id.karma = slide_id.scorm_passed_xp
 
 
-    @http.route(['/scorm/<path:file_path>'], type='http', auth='public', website=True)
-    def scorm_proxy(self, file_path, **kwargs):
-        amazon_access_key = request.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_access_key')
-        amazon_secret_key = request.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_secret_key')
-        bucket_name = request.env['ir.config_parameter'].sudo().get_param('amazon_s3_connector.amazon_bucket_name')
+    @http.route(['/slide/<int:slide_id>/scorm/<path:relpath>'], type='http', auth='public', website=True)
+    def scorm_file(self, slide_id, relpath, **kwargs):
+        fetch_res = self._fetch_slide(slide_id)
+        if fetch_res.get('error'):
+            return Response(status=404)
+        slide = fetch_res['slide']
 
-        if not amazon_access_key or not amazon_secret_key or not bucket_name:
-            return Response("Amazon S3 credentials are not properly configured.", status=500)
+        attachment = request.env['ir.attachment'].sudo().search([
+            ('res_model', '=', 'slide.slide'),
+            ('res_id', '=', slide.id),
+            ('scorm_relpath', '=', relpath),
+        ], limit=1)
+        if not attachment:
+            return Response(status=404)
 
-        # Determine MIME type
-        content_type, _ = mimetypes.guess_type(file_path)
-        if not content_type:
-            content_type = 'application/octet-stream'
-
-        try:
-            s3 = boto3.client(
-                's3',
-                aws_access_key_id=amazon_access_key,
-                aws_secret_access_key=amazon_secret_key
-            )
-
-            s3_response = s3.get_object(Bucket=bucket_name, Key=file_path)
-            content = s3_response['Body'].read()
-
-            return Response(
-                content,
-                content_type=content_type,
-                headers=[("Content-Disposition", f"inline; filename=\"{file_path.split('/')[-1]}\"")]
-            )
-
-        except Exception as e:
-            return Response(f"Error loading SCORM file: {str(e)}", status=404)
+        return attachment._to_http_stream().get_response()
