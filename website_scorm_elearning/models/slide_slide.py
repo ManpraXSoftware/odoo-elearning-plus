@@ -9,7 +9,6 @@ from io import BytesIO
 import logging
 _logger = logging.getLogger(__name__)
 import xml.etree.ElementTree as ET
-from odoo.http import request
 from markupsafe import Markup
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError, ValidationError
@@ -71,17 +70,66 @@ class Slide(models.Model):
     scorm_completion_on_finish = fields.Boolean("Scorm Completion on Finish")
     manifest_file = fields.Char()
 
-    @api.onchange('scorm_version')
-    def onchange_scorm_version(self):
-        if self.manifest_file:
-            res = {}
-            scorm_version = self.extract_scorm_version(self.manifest_file)
-            if scorm_version != self.scorm_version:
-                res['warning'] = {
-                    'title': _('Warning'),
-                    'message': _('The scorm version is different from actual scorm verison. Results may vary if you select wrong scorm version.')
-                }
-                return res
+    detected_scorm_version = fields.Selection([
+        ('scorm11', 'Scorm 1.1/1.2'),
+        ('scorm2004', 'Scorm 2004 Edition'),
+    ], string="Detected Scorm Version", compute="_compute_detected_scorm_version", store=False)
+
+    @api.depends('manifest_file')
+    def _compute_detected_scorm_version(self):
+        for rec in self:
+            detected = False
+            if rec.manifest_file and rec.id and not isinstance(rec.id, models.NewId):
+                try:
+                    detected = rec.extract_scorm_version(rec.manifest_file)
+                except Exception:
+                    _logger.exception("Unable to detect SCORM version for display (slide %s).", rec.id)
+            rec.detected_scorm_version = detected
+
+    @api.onchange('scorm_data')
+    def _onchange_scorm_data_detect_version(self):
+        self.detected_scorm_version = False
+        if not self.scorm_data or len(self.scorm_data) != 1:
+            return
+        attachment = self.scorm_data[0]
+        if not attachment.datas:
+            return
+        try:
+            zip_content = base64.decodebytes(attachment.datas)
+            with zipfile.ZipFile(BytesIO(zip_content)) as zip_obj:
+                names = zip_obj.namelist()
+                root = None
+                manifest_names = [n for n in names if n.lower().endswith('imsmanifest.xml')]
+                if manifest_names:
+                    try:
+                        root = ET.fromstring(zip_obj.read(manifest_names[0]))
+                    except ET.ParseError:
+                        root = None
+                detected = self._detect_scorm_version_from_root(root) if root is not None else False
+                if not detected:
+                    detected, _name = self._detect_scorm_version_from_metadata_files(zip_obj, names)
+                self.detected_scorm_version = detected
+        except Exception:
+            _logger.exception("Unable to detect SCORM version on change.")
+
+    @api.constrains('scorm_version', 'manifest_file')
+    def _check_scorm_version_matches_manifest(self):
+        for rec in self:
+            if rec.slide_category != 'scorm' or not rec.manifest_file:
+                continue
+            detected = rec.extract_scorm_version(rec.manifest_file)
+            if not detected:
+                continue  # couldn't detect anything - don't block on an unknown
+            if rec.scorm_version != detected:
+                labels = dict(rec._fields['scorm_version']._description_selection(rec.env))
+                raise ValidationError(_(
+                    "The selected Scorm Version (%(selected)s) does not match the version "
+                    "detected in this package's manifest (%(detected)s). Please select "
+                    "%(detected)s to match the uploaded file."
+                ) % {
+                    'selected': labels.get(rec.scorm_version, rec.scorm_version),
+                    'detected': labels.get(detected, detected),
+                })
 
     @api.depends('slide_ids.sequence', 'slide_ids.slide_category', 'slide_ids.is_published', 'slide_ids.is_category')
     def _compute_slides_statistics(self):
@@ -99,7 +147,7 @@ class Slide(models.Model):
             if slide.slide_category == 'scorm':
                 slide.slide_type = 'scorm'
         return res
-                
+
     @api.depends('slide_type')
     def _compute_slide_icon_class(self):
         slide = self.filtered(lambda slide: slide.slide_type == 'scorm')
@@ -145,9 +193,10 @@ class Slide(models.Model):
             ('res_id', 'in', self.ids),
             ('scorm_relpath', '!=', False),
         ])
-        res = super().unlink()
-        scorm_attachments.unlink()
-        return res
+        if scorm_attachments:
+            self.scorm_data = [(5, 0, 0)]
+            scorm_attachments.exists().unlink()
+        return super().unlink()
 
     def copy(self, default=None):
         """ The extracted SCORM files are linked to this slide's own id, so a
@@ -191,38 +240,39 @@ class Slide(models.Model):
 
     @api.depends('slide_category', 'google_drive_id', 'video_source_type', 'youtube_id')
     def _compute_embed_code(self):
-            for rec in self:
-                super(Slide, rec)._compute_embed_code()
-                try:
-                    if rec.slide_category == 'scorm' and rec.scorm_data and not rec.is_tincan:
-                        rec.embed_code = Markup('<iframe src="%s" frameborder="0"  aria-label="%s"></iframe>') % (rec.filename, _('Scorm'))
-                        rec.embed_code_external = Markup('<iframe src="%s" frameborder="0"  aria-label="%s"></iframe>') % (rec.filename, _('Scorm'))
-                    elif rec.slide_category == 'scorm' and rec.scorm_data and rec.is_tincan:
-                        user_name = self.env.user.id
-                        user_mail = self.env.user.login
-                        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
-                        end_point = f"{base_url}/slides/slide"
-                        encoded_endpoint = urllib.parse.quote(end_point, safe=":/?&=")
-                        actor_data = {
-                            "name": [user_name],
-                            "mbox": [f"mailto:{user_mail}"]
-                        }
-                        actor_json = json.dumps(actor_data)  # Convert to JSON string
-                        encoded_actor = urllib.parse.quote(actor_json)  # URL encode the JSON string
-                        iframe_template = (
-                            '<iframe src="{}?endpoint={}&actor={}&activity_id={}" '
-                            'allowFullScreen="true" frameborder="0"></iframe>'
-                        )
-                        rec.embed_code = Markup(iframe_template.format(
-                            rec.filename, encoded_endpoint, encoded_actor, rec.id
-                        ))
-                        rec.embed_code_external = Markup(iframe_template.format(
-                            rec.filename, encoded_endpoint, encoded_actor, rec.id
-                        ))
-                except Exception as e:
-                    if rec.slide_category  == 'scorm' and rec.scorm_data:
-                        rec.embed_code = Markup('<iframe src="%s" frameborder="0" autoplay="1"></iframe>') % (rec.filename)
-                        rec.embed_code_external = Markup('<iframe src="%s" aria-label="%s"></iframe>') % (rec.filename, _('Scorm'))
+        for rec in self:
+            super(Slide, rec)._compute_embed_code()
+            try:
+                if rec.slide_category == 'scorm' and rec.scorm_data and not rec.is_tincan:
+                    rec.embed_code = Markup('<iframe src="%s" frameborder="0"  aria-label="%s"></iframe>') % (rec.filename, _('Scorm'))
+                    rec.embed_code_external = Markup('<iframe src="%s" frameborder="0"  aria-label="%s"></iframe>') % (rec.filename, _('Scorm'))
+                elif rec.slide_category == 'scorm' and rec.scorm_data and rec.is_tincan:
+                    user_name = self.env.user.id
+                    user_mail = self.env.user.login
+                    base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+                    end_point = f"{base_url}/slides/slide"
+                    encoded_endpoint = urllib.parse.quote(end_point, safe=":/?&=")
+                    actor_data = {
+                        "name": [user_name],
+                        "mbox": [f"mailto:{user_mail}"]
+                    }
+                    actor_json = json.dumps(actor_data)  # Convert to JSON string
+                    encoded_actor = urllib.parse.quote(actor_json)  # URL encode the JSON string
+                    iframe_template = (
+                        '<iframe src="{}?endpoint={}&actor={}&activity_id={}" '
+                        'allowFullScreen="true" frameborder="0"></iframe>'
+                    )
+                    rec.embed_code = Markup(iframe_template.format(
+                        rec.filename, encoded_endpoint, encoded_actor, rec.id
+                    ))
+                    rec.embed_code_external = Markup(iframe_template.format(
+                        rec.filename, encoded_endpoint, encoded_actor, rec.id
+                    ))
+            except Exception:
+                _logger.exception("Failed to compute SCORM embed code for slide %s", rec.id)
+                if rec.slide_category == 'scorm' and rec.scorm_data:
+                    rec.embed_code = Markup('<iframe src="%s" frameborder="0" autoplay="1"></iframe>') % (rec.filename)
+                    rec.embed_code_external = Markup('<iframe src="%s" aria-label="%s"></iframe>') % (rec.filename, _('Scorm'))
 
     def _scorm_resolve_launch_href(self, manifest_root, strip_namespace):
         """ Resolve the href of the SCO a compliant SCORM player must launch:
@@ -293,6 +343,7 @@ class Slide(models.Model):
         with zipfile.ZipFile(BytesIO(zip_content)) as zip_obj:
             members = [info for info in zip_obj.infolist() if not info.is_dir()]
             list_of_file_names = [member.filename for member in members]
+            metadata_detected_version, metadata_relpath = self._detect_scorm_version_from_metadata_files(zip_obj, list_of_file_names)
 
             manifest_matches = [x for x in list_of_file_names if x.lower().endswith("imsmanifest.xml")]
             if manifest_matches:
@@ -375,9 +426,14 @@ class Slide(models.Model):
             self.env['ir.attachment'].sudo().create(attachment_vals)
 
         self.filename = f'/slide/{self.id}/scorm/{quote(html_file_name, safe="/()")}'
-        if manifest_relpath:
-            self.manifest_file = manifest_relpath
-            self.scorm_version = self.extract_scorm_version(manifest_relpath)
+
+        effective_manifest_path = manifest_relpath or metadata_relpath
+        if effective_manifest_path:
+            self.manifest_file = effective_manifest_path
+            detected = (self.extract_scorm_version(manifest_relpath) if manifest_relpath else False) \
+                or metadata_detected_version
+            if detected and self.scorm_version == 'scorm11':
+                self.scorm_version = detected
 
     def extract_scorm_version(self, manifest_relpath):
         attachment = self.env['ir.attachment'].sudo().search([
@@ -385,13 +441,59 @@ class Slide(models.Model):
             ('res_id', '=', self._origin.id),
             ('scorm_relpath', '=', manifest_relpath),
         ], limit=1)
-        if not attachment:
+        detected = False
+        if attachment:
+            try:
+                root = ET.fromstring(attachment.raw)
+                detected = self._detect_scorm_version_from_root(root)
+            except ET.ParseError:
+                detected = False
+        if detected:
+            return detected
+        xml_attachments = self.env['ir.attachment'].sudo().search([
+            ('res_model', '=', 'slide.slide'),
+            ('res_id', '=', self._origin.id),
+            ('scorm_relpath', 'ilike', '.xml'),
+        ])
+        for meta in xml_attachments:
+            detected = self._detect_scorm_version_from_text(meta.raw.decode('utf-8', errors='ignore'))
+            if detected:
+                return detected
+        return False
+
+    def _detect_scorm_version_from_metadata_files(self, zip_obj, list_of_file_names):
+        xml_names = [n for n in list_of_file_names if n.lower().endswith('.xml')]
+        for name in xml_names:
+            try:
+                text = zip_obj.read(name).decode('utf-8', errors='ignore')
+            except Exception:
+                continue
+            detected = self._detect_scorm_version_from_text(text)
+            if detected:
+                return detected, name
+        return False, False
+
+    @staticmethod
+    def _detect_scorm_version_from_text(text):
+        lowered = text.lower()
+        if 'scorm 1.2' in lowered or 'scorm 1.1' in lowered:
+            return 'scorm11'
+        if 'scorm 2004' in lowered:
             return 'scorm2004'
-        root = ET.fromstring(attachment.raw)
-        # Namespace-agnostic: SCORM 1.2 and 2004 manifests declare different
-        # imscp namespaces (or none at all, depending on the authoring tool),
-        # so matching a hardcoded namespace URI silently misses most packages.
+        return False
+
+    def _detect_scorm_version_from_root(self, root):
         schema_version_element = next(
             (el for el in root.iter() if el.tag.rsplit('}', 1)[-1] == 'schemaversion'), None)
         version_text = (schema_version_element.text or '').strip() if schema_version_element is not None else ''
-        return 'scorm11' if version_text.startswith('1.2') else 'scorm2004'
+        if version_text:
+            return 'scorm11' if version_text.startswith('1.2') else 'scorm2004'
+
+        # Strategy 2: namespace URIs declared on the manifest root
+        namespace_blob = (' '.join(root.attrib.values()) + ' ' + (root.tag or '')).lower()
+        if 'adlcp_rootv1p2' in namespace_blob or 'adlcp_v1p2' in namespace_blob:
+            return 'scorm11'
+        if 'adlcp_v1p3' in namespace_blob:
+            return 'scorm2004'
+
+        return False
