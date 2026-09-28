@@ -16,7 +16,7 @@ Create Online Courses Using Scorm
     'data': [
         'security/ir.model.access.csv',
         'views/slide_slide_views.xml',
-        'views/templates.xml',
+        'views/templates.xml',  
     ],
     'assets': {
         'web.assets_frontend': [
