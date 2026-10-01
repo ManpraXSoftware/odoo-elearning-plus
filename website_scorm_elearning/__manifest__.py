@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'eLearning with Scorm',
-    'version': '19.4',
+    'version': '2.0',
     'sequence': 10,
     'summary': 'Manage and publish an eLearning platform',
     'website': 'https://www.manprax.com',
@@ -15,7 +15,7 @@ Create Online Courses Using Scorm
     ],
     'data': [
         'security/ir.access.csv',
-        'views/res_config_settings_views.xml',
+        # 'views/res_config_settings_views.xml',
         'views/slide_slide_views.xml',
         'views/templates.xml',
     ],
@@ -29,7 +29,6 @@ Create Online Courses Using Scorm
             'website_scorm_elearning/static/src/scss/slide_slide.scss',
         ],
     },
-    'external_dependencies': {'python': ['boto3']},
     'images': ["static/description/images/scorm_banner.png"],
     'installable': True,
     'application': True,
