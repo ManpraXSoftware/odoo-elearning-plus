@@ -153,7 +153,7 @@ class Slide(models.Model):
     @api.depends('slide_type')
     def _compute_slide_icon_class(self):
         slide = self.filtered(lambda slide: slide.slide_type == 'scorm')
-        slide.slide_icon_class = 'fa-file-archive-o'
+        slide.slide_icon_class = 'folder_zip'
         super(Slide, self - slide)._compute_slide_icon_class()
 
     def _compute_quiz_info(self, target_partner, quiz_done=False):
